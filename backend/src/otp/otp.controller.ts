@@ -9,7 +9,7 @@ export class OtpController {
 
   @Post('request-otp')
   async requestOtp(@Body() dto: RequestOtpDto) {
-    return this.otpService.requestOtp(dto.phone, dto.name);
+    return this.otpService.requestOtp(dto.phone);
   }
 
   @Post('verify-otp')

@@ -84,7 +84,10 @@ export class ExpensesController {
   }
 
   @Get('balances')
-  getBalances(@Param('groupId') groupId: string, @CurrentUser() user: AuthUser) {
+  getBalances(
+    @Param('groupId') groupId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
     return this.expensesService.getGroupBalances(Number(groupId), user.userId);
   }
 
@@ -113,7 +116,10 @@ export class ExpensesController {
   }
 
   @Post('split-rules')
-  saveSplitRule(@CurrentUser() user: AuthUser, @Body() dto: CreateSplitRuleDto) {
+  saveSplitRule(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateSplitRuleDto,
+  ) {
     return this.expensesService.saveSplitRule(user.userId, dto);
   }
 

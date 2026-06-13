@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -31,12 +39,19 @@ export class LocationController {
     @CurrentUser() user: AuthUser,
     @Body() dto: UpdateLiveLocationDto,
   ) {
-    return this.locationService.updateLiveLocation(Number(groupId), user.userId, dto);
+    return this.locationService.updateLiveLocation(
+      Number(groupId),
+      user.userId,
+      dto,
+    );
   }
 
   @Get('live')
   listLive(@Param('groupId') groupId: string, @CurrentUser() user: AuthUser) {
-    return this.locationService.listVisibleLocations(Number(groupId), user.userId);
+    return this.locationService.listVisibleLocations(
+      Number(groupId),
+      user.userId,
+    );
   }
 
   @Post('message')

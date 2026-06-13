@@ -18,19 +18,21 @@ export class GroupsService {
 
   async create(dto: CreateGroupDto, userId: number) {
     return this.prisma.group.create({
-        data: {
-          name: dto.name,
-          description: dto.description,
-          photoUrl: dto.photoUrl,
-          defaultCurrency: dto.defaultCurrency?.toUpperCase() ?? 'USD',
-          createdById: userId,
-          members: {
-            create: { userId, role: 'ADMIN' },
-          },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        photoUrl: dto.photoUrl,
+        defaultCurrency: dto.defaultCurrency?.toUpperCase() ?? 'USD',
+        createdById: userId,
+        members: {
+          create: { userId, role: 'ADMIN' },
         },
+      },
       include: {
         members: {
-          include: { user: { select: { id: true, email: true, username: true } } },
+          include: {
+            user: { select: { id: true, email: true, username: true } },
+          },
         },
         createdBy: { select: { id: true, email: true, username: true } },
       },
@@ -44,7 +46,9 @@ export class GroupsService {
       },
       include: {
         members: {
-          include: { user: { select: { id: true, email: true, username: true } } },
+          include: {
+            user: { select: { id: true, email: true, username: true } },
+          },
         },
         createdBy: { select: { id: true, email: true, username: true } },
       },
@@ -58,7 +62,9 @@ export class GroupsService {
       where: { id: groupId },
       include: {
         members: {
-          include: { user: { select: { id: true, email: true, username: true } } },
+          include: {
+            user: { select: { id: true, email: true, username: true } },
+          },
         },
         createdBy: { select: { id: true, email: true, username: true } },
       },
@@ -78,7 +84,9 @@ export class GroupsService {
       where: { id: groupId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description }
+          : {}),
         ...(dto.photoUrl !== undefined ? { photoUrl: dto.photoUrl } : {}),
         ...(dto.defaultCurrency !== undefined
           ? { defaultCurrency: dto.defaultCurrency.toUpperCase() }
@@ -86,7 +94,9 @@ export class GroupsService {
       },
       include: {
         members: {
-          include: { user: { select: { id: true, email: true, username: true } } },
+          include: {
+            user: { select: { id: true, email: true, username: true } },
+          },
         },
         createdBy: { select: { id: true, email: true, username: true } },
       },

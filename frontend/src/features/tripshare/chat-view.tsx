@@ -1,73 +1,73 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, MapPin, Send, Loader2, MessageCircle } from "lucide-react"
-import { getMessages, sendMessage, ApiGroup, ApiMessage } from "@/features/whatsapp/api"
-import { useAuthStore } from "@/store/auth-store"
-import { getSocket } from "@/lib/socket"
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, MapPin, Send, Loader2, MessageCircle } from "lucide-react";
+import { getMessages, sendMessage, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
+import { useAuthStore } from "@/store/auth-store";
+import { getSocket } from "@/lib/socket";
 
 function formatClock(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(iso))
+  }).format(new Date(iso));
 }
 
 type Props = {
-  group: ApiGroup | null
-  onBack: () => void
-}
+  group: ApiGroup | null;
+  onBack: () => void;
+};
 
 export function ChatView({ group, onBack }: Props) {
-  const queryClient = useQueryClient()
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const authUser = useAuthStore((s) => s.user)
-  const [text, setText] = useState("")
+  const queryClient = useQueryClient();
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const authUser = useAuthStore((s) => s.user);
+  const [text, setText] = useState("");
 
   const messagesQuery = useQuery({
     queryKey: ["groups", group?.id, "messages"],
     enabled: Boolean(accessToken && group?.id),
     queryFn: () => getMessages(Number(group!.id)),
-  })
+  });
 
-  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data])
+  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
   useEffect(() => {
-    if (!accessToken || !group?.id) return
-    const socket = getSocket(accessToken)
+    if (!accessToken || !group?.id) return;
+    const socket = getSocket(accessToken);
     const onMessage = (message: ApiMessage) => {
       queryClient.setQueryData<ApiMessage[]>(
         ["groups", message.groupId, "messages"],
         (current = []) => {
-          if (current.some((m) => m.id === message.id)) return current
-          return [...current, message]
+          if (current.some((m) => m.id === message.id)) return current;
+          return [...current, message];
         },
-      )
-    }
-    socket.on("message:new", onMessage)
-    socket.emit("group:join", { groupId: group.id })
-    if (!socket.connected) socket.connect()
+      );
+    };
+    socket.on("message:new", onMessage);
+    socket.emit("group:join", { groupId: group.id });
+    if (!socket.connected) socket.connect();
     return () => {
-      socket.off("message:new", onMessage)
-      socket.emit("group:leave", { groupId: group.id })
-    }
-  }, [accessToken, group?.id, queryClient])
+      socket.off("message:new", onMessage);
+      socket.emit("group:leave", { groupId: group.id });
+    };
+  }, [accessToken, group?.id, queryClient]);
 
   const handleSend = async () => {
-    if (!group || !text.trim()) return
-    const socket = getSocket(accessToken)
+    if (!group || !text.trim()) return;
+    const socket = getSocket(accessToken);
     if (socket.connected) {
       socket.emit("message:send", {
         groupId: group.id,
         message: { type: "TEXT", content: text.trim() },
-      })
+      });
     } else {
-      await sendMessage(group.id, { type: "TEXT", content: text.trim() })
+      await sendMessage(group.id, { type: "TEXT", content: text.trim() });
     }
-    setText("")
-    await queryClient.invalidateQueries({ queryKey: ["groups", group.id, "messages"] })
-  }
+    setText("");
+    await queryClient.invalidateQueries({ queryKey: ["groups", group.id, "messages"] });
+  };
 
   if (!group) {
     return (
@@ -80,7 +80,7 @@ export function ChatView({ group, onBack }: Props) {
           Choose a trip from the Groups tab to start chatting
         </p>
       </div>
-    )
+    );
   }
 
   return (
@@ -112,7 +112,7 @@ export function ChatView({ group, onBack }: Props) {
           <p className="py-8 text-center text-sm text-[#6B7280]">No messages yet</p>
         ) : (
           messages.map((msg) => {
-            const mine = msg.senderId === authUser?.id
+            const mine = msg.senderId === authUser?.id;
             return (
               <div
                 key={msg.id}
@@ -137,7 +137,7 @@ export function ChatView({ group, onBack }: Props) {
                   {formatClock(msg.createdAt)}
                 </p>
               </div>
-            )
+            );
           })
         )}
       </div>
@@ -146,7 +146,9 @@ export function ChatView({ group, onBack }: Props) {
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSend() }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSend();
+          }}
           placeholder="Type a message..."
           className="min-h-[44px] flex-1 resize-none rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-2.5 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
         />
@@ -160,5 +162,5 @@ export function ChatView({ group, onBack }: Props) {
         </button>
       </footer>
     </div>
-  )
+  );
 }

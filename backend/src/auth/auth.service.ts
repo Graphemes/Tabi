@@ -83,8 +83,13 @@ export class AuthService {
         .replace(/(^-|-$)/g, '')
         .slice(0, 24);
 
-      const username = `${baseUsername || 'user'}-${normalizedMobile.slice(-4)}`;
-      const randomPassword = await bcrypt.hash(`mobile:${normalizedMobile}`, 10);
+      const username = `${baseUsername || 'user'}-${normalizedMobile.slice(
+        -4,
+      )}`;
+      const randomPassword = await bcrypt.hash(
+        `mobile:${normalizedMobile}`,
+        10,
+      );
 
       user = await this.prisma.user.create({
         data: {

@@ -144,7 +144,11 @@ export class ExpensesService {
       let remainderCents = totalCents - assigned;
       provisional.sort((a, b) => b.remainder - a.remainder);
 
-      for (let idx = 0; idx < provisional.length && remainderCents > 0; idx += 1) {
+      for (
+        let idx = 0;
+        idx < provisional.length && remainderCents > 0;
+        idx += 1
+      ) {
         provisional[idx].amountCents += 1;
         remainderCents -= 1;
       }
@@ -163,9 +167,14 @@ export class ExpensesService {
     }
 
     if (splitType === ExpenseSplitType.SHARE) {
-      const totalShares = participants.reduce((sum, p) => sum + (p.shares ?? 0), 0);
+      const totalShares = participants.reduce(
+        (sum, p) => sum + (p.shares ?? 0),
+        0,
+      );
       if (totalShares <= 0) {
-        throw new BadRequestException('Share split requires shares greater than 0');
+        throw new BadRequestException(
+          'Share split requires shares greater than 0',
+        );
       }
 
       const provisional = participants.map((p) => {
@@ -180,7 +189,11 @@ export class ExpensesService {
       let remainderCents =
         totalCents - provisional.reduce((sum, p) => sum + p.amountCents, 0);
       provisional.sort((a, b) => b.remainder - a.remainder);
-      for (let idx = 0; idx < provisional.length && remainderCents > 0; idx += 1) {
+      for (
+        let idx = 0;
+        idx < provisional.length && remainderCents > 0;
+        idx += 1
+      ) {
         provisional[idx].amountCents += 1;
         remainderCents -= 1;
       }
@@ -238,7 +251,10 @@ export class ExpensesService {
           );
         }
 
-        const shares = this.distributeEvenly(itemCents, item.participantUserIds);
+        const shares = this.distributeEvenly(
+          itemCents,
+          item.participantUserIds,
+        );
         for (const share of shares) {
           owedByUser.set(
             share.userId,
@@ -322,20 +338,31 @@ export class ExpensesService {
 
     const owedMap = new Map<number, number>();
     for (const owed of owedAllocations) {
-      owedMap.set(owed.userId, (owedMap.get(owed.userId) ?? 0) + owed.amountCents);
+      owedMap.set(
+        owed.userId,
+        (owedMap.get(owed.userId) ?? 0) + owed.amountCents,
+      );
     }
 
     const paidMap = new Map<number, number>();
     for (const paid of paidAllocations) {
-      paidMap.set(paid.userId, (paidMap.get(paid.userId) ?? 0) + paid.amountCents);
+      paidMap.set(
+        paid.userId,
+        (paidMap.get(paid.userId) ?? 0) + paid.amountCents,
+      );
     }
 
     const combinedUserIds = Array.from(
       new Set([...owedMap.keys(), ...paidMap.keys()]),
     );
 
-    const currency = this.normalizeCurrency(dto.currency, group.defaultCurrency);
-    const expenseDate = dto.expenseDate ? new Date(dto.expenseDate) : new Date();
+    const currency = this.normalizeCurrency(
+      dto.currency,
+      group.defaultCurrency,
+    );
+    const expenseDate = dto.expenseDate
+      ? new Date(dto.expenseDate)
+      : new Date();
 
     const expense = await this.prisma.expense.create({
       data: {
@@ -465,7 +492,9 @@ export class ExpensesService {
         ...(filters.fromDate || filters.toDate
           ? {
               expenseDate: {
-                ...(filters.fromDate ? { gte: new Date(filters.fromDate) } : {}),
+                ...(filters.fromDate
+                  ? { gte: new Date(filters.fromDate) }
+                  : {}),
                 ...(filters.toDate ? { lte: new Date(filters.toDate) } : {}),
               },
             }
@@ -540,13 +569,23 @@ export class ExpensesService {
       ...(dto.totalAmount !== undefined
         ? { totalAmount: new Prisma.Decimal(dto.totalAmount) }
         : {}),
-      ...(dto.currency !== undefined ? { currency: dto.currency.toUpperCase() } : {}),
+      ...(dto.currency !== undefined
+        ? { currency: dto.currency.toUpperCase() }
+        : {}),
       ...(dto.category !== undefined ? { category: dto.category } : {}),
       ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-      ...(dto.attachmentUrl !== undefined ? { attachmentUrl: dto.attachmentUrl } : {}),
-      ...(dto.expenseDate !== undefined ? { expenseDate: new Date(dto.expenseDate) } : {}),
-      ...(dto.isRecurring !== undefined ? { isRecurring: dto.isRecurring } : {}),
-      ...(dto.recurringRule !== undefined ? { recurringRule: dto.recurringRule } : {}),
+      ...(dto.attachmentUrl !== undefined
+        ? { attachmentUrl: dto.attachmentUrl }
+        : {}),
+      ...(dto.expenseDate !== undefined
+        ? { expenseDate: new Date(dto.expenseDate) }
+        : {}),
+      ...(dto.isRecurring !== undefined
+        ? { isRecurring: dto.isRecurring }
+        : {}),
+      ...(dto.recurringRule !== undefined
+        ? { recurringRule: dto.recurringRule }
+        : {}),
     };
 
     const updatedExpense = await this.prisma.expense.update({
@@ -668,7 +707,10 @@ export class ExpensesService {
     });
 
     const balances = members.map((member) => {
-      const totals = perPerson.get(member.userId) ?? { paidCents: 0, owedCents: 0 };
+      const totals = perPerson.get(member.userId) ?? {
+        paidCents: 0,
+        owedCents: 0,
+      };
       const netCents = totals.paidCents - totals.owedCents;
       return {
         user: member.user,
@@ -714,8 +756,11 @@ export class ExpensesService {
         netCents: Math.abs(balance.netCents),
       }));
 
-    const transfers: Array<{ fromUserId: number; toUserId: number; amountCents: number }> =
-      [];
+    const transfers: Array<{
+      fromUserId: number;
+      toUserId: number;
+      amountCents: number;
+    }> = [];
 
     let creditorIdx = 0;
     let debtorIdx = 0;
@@ -761,7 +806,9 @@ export class ExpensesService {
       throw new BadRequestException('Payer and receiver cannot be same');
     }
 
-    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+    });
     if (!group) {
       throw new NotFoundException('Group not found');
     }
@@ -847,7 +894,11 @@ export class ExpensesService {
     });
   }
 
-  async equalizeForNewMember(groupId: number, userId: number, memberId: number) {
+  async equalizeForNewMember(
+    groupId: number,
+    userId: number,
+    memberId: number,
+  ) {
     await this.groupAccessService.ensureAdmin(groupId, userId);
     await this.groupAccessService.ensureMember(groupId, memberId);
 
@@ -877,10 +928,15 @@ export class ExpensesService {
 
       const newSplit = this.distributeEvenly(
         this.toCents(Number(expense.totalAmount)),
-        [...expense.participants.map((participant) => participant.userId), memberId],
+        [
+          ...expense.participants.map((participant) => participant.userId),
+          memberId,
+        ],
       );
 
-      const newMemberEntry = newSplit.find((entry) => entry.userId === memberId);
+      const newMemberEntry = newSplit.find(
+        (entry) => entry.userId === memberId,
+      );
       if (!newMemberEntry) {
         continue;
       }
@@ -889,7 +945,9 @@ export class ExpensesService {
         data: {
           expenseId: expense.id,
           userId: memberId,
-          owedAmount: new Prisma.Decimal(this.toAmount(newMemberEntry.amountCents)),
+          owedAmount: new Prisma.Decimal(
+            this.toAmount(newMemberEntry.amountCents),
+          ),
           paidAmount: new Prisma.Decimal(0),
           metadata: {
             equalizedAt: new Date().toISOString(),

@@ -1,52 +1,39 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Bell,
-  LayoutGrid,
-  Wallet,
-  Map,
-  MessageCircle,
-  Loader2,
-  ArrowLeft,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useAuthStore } from "@/store/auth-store"
-import {
-  getGroups,
-  requestOtp,
-  verifyOtp,
-} from "@/features/whatsapp/api"
-import type { TabId } from "./types"
-import { MyTrips } from "./my-trips"
-import { ExpensesView } from "./expenses-view"
-import { MapView } from "./map-view"
-import { ChatView } from "./chat-view"
-import { CreateNewGroup } from "./create-new-group"
-import { ProfilePage } from "./profile-page"
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, LayoutGrid, Wallet, Map, MessageCircle, Loader2, ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuthStore } from "@/store/auth-store";
+import { getGroups, requestOtp, verifyOtp } from "@/features/whatsapp/api";
+import type { TabId } from "./types";
+import { MyTrips } from "./my-trips";
+import { ExpensesView } from "./expenses-view";
+import { MapView } from "./map-view";
+import { ChatView } from "./chat-view";
+import { CreateNewGroup } from "./create-new-group";
+import { ProfilePage } from "./profile-page";
 
 const TABS: { id: TabId; label: string; icon: typeof LayoutGrid }[] = [
   { id: "groups", label: "Groups", icon: LayoutGrid },
   { id: "expenses", label: "Expenses", icon: Wallet },
   { id: "map", label: "Map", icon: Map },
   { id: "chat", label: "Chat", icon: MessageCircle },
-]
+];
 
 const loginSchema = z.object({
-  name: z.string().min(2, "Enter your name"),
   mobile: z
     .string()
     .min(10, "Enter valid mobile number")
     .regex(/^[+0-9\s-]{10,16}$/, "Only numbers, +, -, spaces"),
-})
+});
 
-type LoginSchema = z.infer<typeof loginSchema>
+type LoginSchema = z.infer<typeof loginSchema>;
 
 function initials(name: string) {
   return name
@@ -54,55 +41,54 @@ function initials(name: string) {
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase()
+    .toUpperCase();
 }
 
 export function TripShareShell() {
-  const queryClient = useQueryClient()
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const authUser = useAuthStore((s) => s.user)
-  const setAuth = useAuthStore((s) => s.setAuth)
-  const clearAuth = useAuthStore((s) => s.clearAuth)
+  const queryClient = useQueryClient();
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const authUser = useAuthStore((s) => s.user);
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
 
-  const [activeTab, setActiveTab] = useState<TabId>("groups")
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
-  const [activeOverlay, setActiveOverlay] = useState<"create-group" | "profile" | null>(null)
-  const [loginStep, setLoginStep] = useState<"phone" | "otp">("phone")
-  const [pendingPhone, setPendingPhone] = useState("")
-  const [pendingName, setPendingName] = useState("")
-  const [otpValue, setOtpValue] = useState("")
+  const [activeTab, setActiveTab] = useState<TabId>("groups");
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<"create-group" | "profile" | null>(null);
+  const [loginStep, setLoginStep] = useState<"phone" | "otp">("phone");
+  const [pendingPhone, setPendingPhone] = useState("");
+  const [otpValue, setOtpValue] = useState("");
 
   const loginForm = useForm<LoginSchema>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { name: "", mobile: "" },
-  })
+    defaultValues: { mobile: "" },
+  });
 
   const requestOtpMutation = useMutation({
-    mutationFn: (payload: { phone: string; name?: string }) => requestOtp(payload),
+    mutationFn: (phone: string) => requestOtp(phone),
     onSuccess: () => setLoginStep("otp"),
-  })
+  });
 
   const verifyOtpMutation = useMutation({
     mutationFn: verifyOtp,
     onSuccess: (data) => {
       setAuth({
         accessToken: data.access_token,
-        user: { ...data.user, phone: data.phone, name: pendingName },
-      })
+        user: { ...data.user, phone: data.phone, name: data.user.name || "User" },
+      });
     },
-  })
+  });
 
   const groupsQuery = useQuery({
     queryKey: ["groups"],
     enabled: Boolean(accessToken),
     queryFn: getGroups,
-  })
+  });
 
-  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data])
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const selectedGroup = useMemo(
     () => groups.find((g) => g.id === selectedGroupId) ?? null,
     [groups, selectedGroupId],
-  )
+  );
 
   if (!accessToken || !authUser) {
     if (loginStep === "otp") {
@@ -113,7 +99,11 @@ export function TripShareShell() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => { setLoginStep("phone"); setOtpValue(""); requestOtpMutation.reset() }}
+                  onClick={() => {
+                    setLoginStep("phone");
+                    setOtpValue("");
+                    requestOtpMutation.reset();
+                  }}
                   className="-ml-1 rounded-full p-1 text-[#6B7280] hover:bg-[#DCE9FF]"
                 >
                   <ArrowLeft className="size-5" />
@@ -154,7 +144,7 @@ export function TripShareShell() {
             </CardContent>
           </Card>
         </div>
-      )
+      );
     }
 
     return (
@@ -170,23 +160,17 @@ export function TripShareShell() {
             <form
               className="space-y-4"
               onSubmit={loginForm.handleSubmit((values) => {
-                setPendingName(values.name)
-                setPendingPhone(values.mobile)
-                requestOtpMutation.mutate({ name: values.name, phone: values.mobile })
+                setPendingPhone(values.mobile);
+                requestOtpMutation.mutate(values.mobile);
               })}
             >
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-[#0B1C30]">Name</label>
-                <Input placeholder="Your full name" {...loginForm.register("name")} />
-                {loginForm.formState.errors.name && (
-                  <p className="text-xs text-red-500">{loginForm.formState.errors.name.message}</p>
-                )}
-              </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-[#0B1C30]">Mobile Number</label>
                 <Input placeholder="+91 98XXXXXXXX" {...loginForm.register("mobile")} />
                 {loginForm.formState.errors.mobile && (
-                  <p className="text-xs text-red-500">{loginForm.formState.errors.mobile.message}</p>
+                  <p className="text-xs text-red-500">
+                    {loginForm.formState.errors.mobile.message}
+                  </p>
                 )}
               </div>
               {requestOtpMutation.isError && (
@@ -206,7 +190,7 @@ export function TripShareShell() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -235,13 +219,22 @@ export function TripShareShell() {
         ) : activeOverlay === "profile" ? (
           <ProfilePage onBack={() => setActiveOverlay(null)} />
         ) : activeTab === "chat" && selectedGroup ? (
-          <ChatView group={selectedGroup} onBack={() => { setSelectedGroupId(null); setActiveTab("groups") }} />
+          <ChatView
+            group={selectedGroup}
+            onBack={() => {
+              setSelectedGroupId(null);
+              setActiveTab("groups");
+            }}
+          />
         ) : activeTab === "chat" ? (
           <ChatView group={null} onBack={() => {}} />
         ) : activeTab === "groups" ? (
           <MyTrips
             groups={groups}
-            onSelectGroup={(id) => { setSelectedGroupId(id); setActiveTab("chat") }}
+            onSelectGroup={(id) => {
+              setSelectedGroupId(id);
+              setActiveTab("chat");
+            }}
             onFabClick={() => setActiveOverlay("create-group")}
           />
         ) : activeTab === "expenses" ? (
@@ -253,13 +246,16 @@ export function TripShareShell() {
 
       <footer className="flex items-center justify-around border-t border-[#E2E8F0] bg-[#F8F9FF] px-6 py-2">
         {TABS.map((tab) => {
-          const isActive = activeTab === tab.id
-          const Icon = tab.icon
+          const isActive = activeTab === tab.id;
+          const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => { setActiveTab(tab.id); if (tab.id !== "chat") setSelectedGroupId(null) }}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id !== "chat") setSelectedGroupId(null);
+              }}
               className={`flex flex-col items-center gap-0.5 rounded-full px-4 py-1.5 transition ${
                 isActive ? "bg-[#FE6B00] text-white" : "text-[#404848] hover:bg-[#DCE9FF]"
               }`}
@@ -267,9 +263,9 @@ export function TripShareShell() {
               <Icon className="size-5" />
               <span className="text-[10px] font-semibold tracking-[0.05em]">{tab.label}</span>
             </button>
-          )
+          );
         })}
       </footer>
     </div>
-  )
+  );
 }

@@ -13,7 +13,11 @@ export class LocationService {
     private readonly activityService: ActivityService,
   ) {}
 
-  async setSharing(groupId: number, userId: number, dto: ToggleLocationSharingDto) {
+  async setSharing(
+    groupId: number,
+    userId: number,
+    dto: ToggleLocationSharingDto,
+  ) {
     await this.groupAccessService.ensureMember(groupId, userId);
 
     const member = await this.prisma.groupMember.update({
@@ -36,7 +40,9 @@ export class LocationService {
     await this.activityService.log({
       groupId,
       actorId: userId,
-      action: dto.enabled ? 'LOCATION_SHARING_ENABLED' : 'LOCATION_SHARING_DISABLED',
+      action: dto.enabled
+        ? 'LOCATION_SHARING_ENABLED'
+        : 'LOCATION_SHARING_DISABLED',
       entityType: 'GroupMember',
       entityId: member.id,
     });

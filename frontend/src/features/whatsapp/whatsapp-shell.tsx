@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -17,12 +17,12 @@ import {
   Send,
   User,
   Users,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getSocket } from "@/lib/socket"
-import { useAuthStore } from "@/store/auth-store"
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getSocket } from "@/lib/socket";
+import { useAuthStore } from "@/store/auth-store";
 import {
   addGroupMember,
   ApiGroup,
@@ -40,44 +40,43 @@ import {
   sendLocationMessage,
   sendMessage,
   verifyOtp,
-} from "@/features/whatsapp/api"
+} from "@/features/whatsapp/api";
 
 const mobileSchema = z.object({
-  name: z.string().min(2, "Enter your name"),
   mobile: z
     .string()
     .min(10, "Enter valid mobile number")
     .regex(/^[+0-9\s-]{10,16}$/, "Only numbers, +, -, spaces"),
-})
+});
 
-type MobileSchema = z.infer<typeof mobileSchema>
+type MobileSchema = z.infer<typeof mobileSchema>;
 
 const groupSchema = z.object({
   groupName: z.string().min(2, "Group name is required"),
-})
+});
 
-type GroupSchema = z.infer<typeof groupSchema>
+type GroupSchema = z.infer<typeof groupSchema>;
 
 const billSchema = z.object({
   title: z.string().min(2, "Title required"),
   amount: z.number().positive("Amount must be positive"),
-})
+});
 
-type BillSchema = z.infer<typeof billSchema>
+type BillSchema = z.infer<typeof billSchema>;
 
 const formatClock = (iso: string) =>
   new Intl.DateTimeFormat("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(iso))
+  }).format(new Date(iso));
 
 const displayName = (user?: Pick<ApiUser, "username" | "name" | "email"> | null) => {
   if (!user) {
-    return "Unknown"
+    return "Unknown";
   }
 
-  return user.name || user.username || user.email.split("@")[0]
-}
+  return user.name || user.username || user.email.split("@")[0];
+};
 
 const initials = (name: string) =>
   name
@@ -85,48 +84,47 @@ const initials = (name: string) =>
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase()
+    .toUpperCase();
 
-const messageBody = (message: ApiMessage) => message.content || message.mediaUrl || ""
+const messageBody = (message: ApiMessage) => message.content || message.mediaUrl || "";
 
 export function WhatsappShell() {
-  const queryClient = useQueryClient()
-  const accessToken = useAuthStore((state) => state.accessToken)
-  const authUser = useAuthStore((state) => state.user)
-  const setAuth = useAuthStore((state) => state.setAuth)
-  const clearAuth = useAuthStore((state) => state.clearAuth)
+  const queryClient = useQueryClient();
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const authUser = useAuthStore((state) => state.user);
+  const setAuth = useAuthStore((state) => state.setAuth);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
-  const [messageText, setMessageText] = useState("")
-  const [searchText, setSearchText] = useState("")
-  const [contactsSynced, setContactsSynced] = useState(false)
-  const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([])
-  const [loginStep, setLoginStep] = useState<"phone" | "otp">("phone")
-  const [pendingPhone, setPendingPhone] = useState("")
-  const [pendingName, setPendingName] = useState("")
-  const [otpValue, setOtpValue] = useState("")
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [messageText, setMessageText] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [contactsSynced, setContactsSynced] = useState(false);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<number[]>([]);
+  const [loginStep, setLoginStep] = useState<"phone" | "otp">("phone");
+  const [pendingPhone, setPendingPhone] = useState("");
+  const [otpValue, setOtpValue] = useState("");
 
   const loginForm = useForm<MobileSchema>({
     resolver: zodResolver(mobileSchema),
-    defaultValues: { name: "", mobile: "" },
-  })
+    defaultValues: { mobile: "" },
+  });
 
   const groupForm = useForm<GroupSchema>({
     resolver: zodResolver(groupSchema),
     defaultValues: { groupName: "" },
-  })
+  });
 
   const billForm = useForm<BillSchema>({
     resolver: zodResolver(billSchema),
     defaultValues: { title: "", amount: 0 },
-  })
+  });
 
   const requestOtpMutation = useMutation({
-    mutationFn: (payload: { phone: string; name?: string }) => requestOtp(payload),
+    mutationFn: (phone: string) => requestOtp(phone),
     onSuccess: () => {
-      setLoginStep("otp")
+      setLoginStep("otp");
     },
-  })
+  });
 
   const verifyOtpMutation = useMutation({
     mutationFn: verifyOtp,
@@ -136,54 +134,54 @@ export function WhatsappShell() {
         user: {
           ...data.user,
           phone: data.phone,
-          name: pendingName,
+          name: data.user.name || "User",
         },
-      })
+      });
     },
-  })
+  });
 
   const friendsQuery = useQuery({
     queryKey: ["friends"],
     enabled: Boolean(accessToken),
     queryFn: getFriends,
-  })
+  });
 
   const contactsQuery = useQuery({
     queryKey: ["friends", "discover", searchText],
     enabled: Boolean(accessToken && contactsSynced),
     queryFn: () => discoverUsers(searchText),
-  })
+  });
 
   const groupsQuery = useQuery({
     queryKey: ["groups"],
     enabled: Boolean(accessToken),
     queryFn: getGroups,
-  })
+  });
 
   const selectedGroup = useMemo(
     () => groupsQuery.data?.find((group) => group.id === selectedGroupId) ?? null,
     [groupsQuery.data, selectedGroupId],
-  )
+  );
 
   const messagesQuery = useQuery({
     queryKey: ["groups", selectedGroupId, "messages"],
     enabled: Boolean(accessToken && selectedGroupId),
     queryFn: () => getMessages(Number(selectedGroupId)),
-  })
+  });
 
   const createGroupMutation = useMutation({
     mutationFn: async ({ name, memberIds }: { name: string; memberIds: number[] }) => {
-      const group = await createGroup({ name })
-      await Promise.all(memberIds.map((memberId) => addGroupMember(group.id, memberId)))
-      return group
+      const group = await createGroup({ name });
+      await Promise.all(memberIds.map((memberId) => addGroupMember(group.id, memberId)));
+      return group;
     },
     onSuccess: async (group) => {
-      await queryClient.invalidateQueries({ queryKey: ["groups"] })
-      setSelectedGroupId(group.id)
-      setSelectedFriendIds([])
-      groupForm.reset()
+      await queryClient.invalidateQueries({ queryKey: ["groups"] });
+      setSelectedGroupId(group.id);
+      setSelectedFriendIds([]);
+      groupForm.reset();
     },
-  })
+  });
 
   const friendRequestMutation = useMutation({
     mutationFn: sendFriendRequest,
@@ -191,112 +189,120 @@ export function WhatsappShell() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["friends"] }),
         queryClient.invalidateQueries({ queryKey: ["friends", "discover"] }),
-      ])
+      ]);
     },
-  })
+  });
 
   const sendTextMutation = useMutation({
     mutationFn: async ({ groupId, content }: { groupId: number; content: string }) => {
-      const socket = getSocket(accessToken)
+      const socket = getSocket(accessToken);
       if (socket.connected) {
         socket.emit("message:send", {
           groupId,
           message: { type: "TEXT", content },
-        })
-        return null
+        });
+        return null;
       }
 
-      return sendMessage(groupId, { type: "TEXT", content })
+      return sendMessage(groupId, { type: "TEXT", content });
     },
     onSuccess: async () => {
-      setMessageText("")
-      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] })
+      setMessageText("");
+      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] });
     },
-  })
+  });
 
   const sendLocationMutation = useMutation({
     mutationFn: sendLocationMessage,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] })
+      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] });
     },
-  })
+  });
 
   const billMutation = useMutation({
-    mutationFn: async ({ group, title, amount }: { group: ApiGroup; title: string; amount: number }) => {
+    mutationFn: async ({
+      group,
+      title,
+      amount,
+    }: {
+      group: ApiGroup;
+      title: string;
+      amount: number;
+    }) => {
       if (!authUser) {
-        throw new Error("Login required")
+        throw new Error("Login required");
       }
 
-      await createExpense(group, authUser.id, { title, amount })
+      await createExpense(group, authUser.id, { title, amount });
       return sendMessage(group.id, {
         type: "TEXT",
         content: `BILL::${title}::${amount.toFixed(2)}::${group.defaultCurrency || "USD"}`,
-      })
+      });
     },
     onSuccess: async () => {
-      billForm.reset({ title: "", amount: 0 })
-      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] })
+      billForm.reset({ title: "", amount: 0 });
+      await queryClient.invalidateQueries({ queryKey: ["groups", selectedGroupId, "messages"] });
     },
-  })
+  });
 
   useEffect(() => {
     if (!accessToken) {
-      return
+      return;
     }
 
-    const socket = getSocket(accessToken)
+    const socket = getSocket(accessToken);
     const onMessage = (message: ApiMessage) => {
       queryClient.setQueryData<ApiMessage[]>(
         ["groups", message.groupId, "messages"],
         (current = []) => {
           if (current.some((item) => item.id === message.id)) {
-            return current
+            return current;
           }
-          return [...current, message]
+          return [...current, message];
         },
-      )
-      void queryClient.invalidateQueries({ queryKey: ["groups"] })
-    }
+      );
+      void queryClient.invalidateQueries({ queryKey: ["groups"] });
+    };
 
-    socket.on("message:new", onMessage)
+    socket.on("message:new", onMessage);
     if (!socket.connected) {
-      socket.connect()
+      socket.connect();
     }
 
     return () => {
-      socket.off("message:new", onMessage)
-    }
-  }, [accessToken, queryClient])
+      socket.off("message:new", onMessage);
+    };
+  }, [accessToken, queryClient]);
 
   useEffect(() => {
     if (!accessToken || !selectedGroupId) {
-      return
+      return;
     }
 
-    const socket = getSocket(accessToken)
-    socket.emit("group:join", { groupId: selectedGroupId })
+    const socket = getSocket(accessToken);
+    socket.emit("group:join", { groupId: selectedGroupId });
 
     return () => {
-      socket.emit("group:leave", { groupId: selectedGroupId })
-    }
-  }, [accessToken, selectedGroupId])
+      socket.emit("group:leave", { groupId: selectedGroupId });
+    };
+  }, [accessToken, selectedGroupId]);
 
-  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data])
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const friends = useMemo(
     () => (friendsQuery.data ?? []).map((item) => item.friend),
     [friendsQuery.data],
-  )
-  const contacts = useMemo(() => contactsQuery.data ?? [], [contactsQuery.data])
-  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data])
+  );
+  const contacts = useMemo(() => contactsQuery.data ?? [], [contactsQuery.data]);
+  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
   const visibleGroups = useMemo(() => {
     if (!searchText.trim()) {
-      return groups
+      return groups;
     }
 
-    const query = searchText.toLowerCase()
-    return groups.filter((group) => group.name.toLowerCase().includes(query))
-  }, [groups, searchText])
+    const query = searchText.toLowerCase();
+    return groups.filter((group) => group.name.toLowerCase().includes(query));
+  }, [groups, searchText]);
 
   if (!accessToken || !authUser) {
     if (loginStep === "otp") {
@@ -308,9 +314,9 @@ export function WhatsappShell() {
                 <button
                   type="button"
                   onClick={() => {
-                    setLoginStep("phone")
-                    setOtpValue("")
-                    requestOtpMutation.reset()
+                    setLoginStep("phone");
+                    setOtpValue("");
+                    requestOtpMutation.reset();
                   }}
                   className="-ml-1 rounded-full p-1 text-muted-foreground hover:bg-emerald-100"
                 >
@@ -354,7 +360,7 @@ export function WhatsappShell() {
             </CardContent>
           </Card>
         </div>
-      )
+      );
     }
 
     return (
@@ -370,30 +376,24 @@ export function WhatsappShell() {
             <form
               className="space-y-4"
               onSubmit={loginForm.handleSubmit((values) => {
-                setPendingName(values.name)
-                setPendingPhone(values.mobile)
-                requestOtpMutation.mutate({ name: values.name, phone: values.mobile })
+                setPendingPhone(values.mobile);
+                requestOtpMutation.mutate(values.mobile);
               })}
             >
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">Name</label>
-                <Input placeholder="Your full name" {...loginForm.register("name")} />
-                {loginForm.formState.errors.name ? (
-                  <p className="text-xs text-destructive">{loginForm.formState.errors.name.message}</p>
-                ) : null}
-              </div>
-
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Mobile Number</label>
                 <Input placeholder="+91 98XXXXXXXX" {...loginForm.register("mobile")} />
                 {loginForm.formState.errors.mobile ? (
-                  <p className="text-xs text-destructive">{loginForm.formState.errors.mobile.message}</p>
+                  <p className="text-xs text-destructive">
+                    {loginForm.formState.errors.mobile.message}
+                  </p>
                 ) : null}
               </div>
 
               {requestOtpMutation.isError ? (
                 <p className="text-sm text-destructive">
-                  {requestOtpMutation.error?.message || "Could not send OTP. Check backend is running."}
+                  {requestOtpMutation.error?.message ||
+                    "Could not send OTP. Check backend is running."}
                 </p>
               ) : null}
 
@@ -409,7 +409,7 @@ export function WhatsappShell() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -423,7 +423,9 @@ export function WhatsappShell() {
               </div>
               <div>
                 <p className="text-sm font-semibold">{displayName(authUser)}</p>
-                <p className="text-xs text-muted-foreground">{authUser.phone || authUser.mobile || authUser.email}</p>
+                <p className="text-xs text-muted-foreground">
+                  {authUser.phone || authUser.mobile || authUser.email}
+                </p>
               </div>
             </div>
             <Button variant="outline" size="sm" onClick={clearAuth}>
@@ -448,7 +450,7 @@ export function WhatsappShell() {
                 createGroupMutation.mutate({
                   name: values.groupName,
                   memberIds: selectedFriendIds,
-                })
+                });
               })}
             >
               <div className="flex items-center gap-2">
@@ -457,13 +459,17 @@ export function WhatsappShell() {
                   Create Group
                 </p>
               </div>
-              <Input placeholder="Trip group name" className="bg-white" {...groupForm.register("groupName")} />
+              <Input
+                placeholder="Trip group name"
+                className="bg-white"
+                {...groupForm.register("groupName")}
+              />
               <div className="max-h-20 space-y-1 overflow-y-auto rounded-md bg-white p-2">
                 {friends.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Add friends first.</p>
                 ) : (
                   friends.map((friend) => {
-                    const checked = selectedFriendIds.includes(friend.id)
+                    const checked = selectedFriendIds.includes(friend.id);
                     return (
                       <label key={friend.id} className="flex items-center gap-2 text-xs">
                         <input
@@ -471,13 +477,15 @@ export function WhatsappShell() {
                           checked={checked}
                           onChange={() => {
                             setSelectedFriendIds((prev) =>
-                              checked ? prev.filter((id) => id !== friend.id) : [...prev, friend.id],
-                            )
+                              checked
+                                ? prev.filter((id) => id !== friend.id)
+                                : [...prev, friend.id],
+                            );
                           }}
                         />
                         {displayName(friend)}
                       </label>
-                    )
+                    );
                   })
                 )}
               </div>
@@ -487,7 +495,11 @@ export function WhatsappShell() {
                 className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
                 disabled={createGroupMutation.isPending || selectedFriendIds.length === 0}
               >
-                {createGroupMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                {createGroupMutation.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
                 Create Group
               </Button>
             </form>
@@ -516,7 +528,9 @@ export function WhatsappShell() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{group.name}</p>
-                      <p className="text-xs text-muted-foreground">{group.members.length} members</p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.members.length} members
+                      </p>
                     </div>
                   </button>
                 ))
@@ -527,9 +541,13 @@ export function WhatsappShell() {
         <main className="grid min-h-0 grid-rows-[auto_1fr_auto]">
           <header className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
             <div>
-              <p className="text-base font-semibold">{selectedGroup ? selectedGroup.name : "Select a chat"}</p>
+              <p className="text-base font-semibold">
+                {selectedGroup ? selectedGroup.name : "Select a chat"}
+              </p>
               <p className="text-xs text-muted-foreground">
-                {selectedGroup ? `${selectedGroup.members.length} participants` : "Create/select group to start"}
+                {selectedGroup
+                  ? `${selectedGroup.members.length} participants`
+                  : "Create/select group to start"}
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setContactsSynced(true)}>
@@ -551,9 +569,9 @@ export function WhatsappShell() {
               ) : (
                 <div className="space-y-2">
                   {messages.map((message) => {
-                    const mine = message.senderId === authUser.id
-                    const content = messageBody(message)
-                    const billParts = content.startsWith("BILL::") ? content.split("::") : null
+                    const mine = message.senderId === authUser.id;
+                    const content = messageBody(message);
+                    const billParts = content.startsWith("BILL::") ? content.split("::") : null;
                     return (
                       <div
                         key={message.id}
@@ -562,7 +580,12 @@ export function WhatsappShell() {
                         }`}
                       >
                         {message.type === "LOCATION" ? (
-                          <a href={content} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">
+                          <a
+                            href={content}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 underline"
+                          >
                             <MapPin className="size-4" />
                             Open shared location
                             <ArrowUpRight className="size-3" />
@@ -575,11 +598,13 @@ export function WhatsappShell() {
                         ) : (
                           <p>{content}</p>
                         )}
-                        <p className={`mt-1 text-[10px] ${mine ? "text-white/80" : "text-slate-500"}`}>
+                        <p
+                          className={`mt-1 text-[10px] ${mine ? "text-white/80" : "text-slate-500"}`}
+                        >
                           {formatClock(message.createdAt)}
                         </p>
                       </div>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -592,7 +617,9 @@ export function WhatsappShell() {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <p className="font-medium">{displayName(authUser)}</p>
-                  <p className="text-muted-foreground">{authUser.phone || authUser.mobile || authUser.email}</p>
+                  <p className="text-muted-foreground">
+                    {authUser.phone || authUser.mobile || authUser.email}
+                  </p>
                   <p className="text-muted-foreground">Connected to backend</p>
                 </CardContent>
               </Card>
@@ -621,14 +648,21 @@ export function WhatsappShell() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {!contactsSynced ? (
-                    <p className="text-sm text-muted-foreground">Sync contacts to discover backend users.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Sync contacts to discover backend users.
+                    </p>
                   ) : contactsQuery.isLoading ? (
                     <p className="text-sm text-muted-foreground">Finding users...</p>
                   ) : contacts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No users found. Create another mobile login user in another browser/session.</p>
+                    <p className="text-sm text-muted-foreground">
+                      No users found. Create another mobile login user in another browser/session.
+                    </p>
                   ) : (
                     contacts.map((contact) => (
-                      <div key={contact.id} className="flex items-center justify-between gap-2 text-sm">
+                      <div
+                        key={contact.id}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
                         <div>
                           <p>{displayName(contact)}</p>
                           <p className="text-xs text-muted-foreground">{contact.email}</p>
@@ -636,10 +670,18 @@ export function WhatsappShell() {
                         <Button
                           size="xs"
                           variant={contact.isFriend ? "secondary" : "outline"}
-                          disabled={contact.isFriend || contact.hasPendingRequest || friendRequestMutation.isPending}
+                          disabled={
+                            contact.isFriend ||
+                            contact.hasPendingRequest ||
+                            friendRequestMutation.isPending
+                          }
                           onClick={() => friendRequestMutation.mutate(contact.id)}
                         >
-                          {contact.isFriend ? "Added" : contact.hasPendingRequest ? "Pending" : "Add"}
+                          {contact.isFriend
+                            ? "Added"
+                            : contact.hasPendingRequest
+                              ? "Pending"
+                              : "Add"}
                         </Button>
                       </div>
                     ))
@@ -661,8 +703,11 @@ export function WhatsappShell() {
                 className="bg-emerald-600 text-white hover:bg-emerald-700"
                 disabled={!selectedGroup || !messageText.trim() || sendTextMutation.isPending}
                 onClick={() => {
-                  if (!selectedGroup || !messageText.trim()) return
-                  sendTextMutation.mutate({ groupId: selectedGroup.id, content: messageText.trim() })
+                  if (!selectedGroup || !messageText.trim()) return;
+                  sendTextMutation.mutate({
+                    groupId: selectedGroup.id,
+                    content: messageText.trim(),
+                  });
                 }}
               >
                 <Send className="size-4" />
@@ -674,11 +719,19 @@ export function WhatsappShell() {
               <form
                 className="flex gap-2"
                 onSubmit={billForm.handleSubmit((values) => {
-                  if (!selectedGroup) return
-                  billMutation.mutate({ group: selectedGroup, title: values.title, amount: values.amount })
+                  if (!selectedGroup) return;
+                  billMutation.mutate({
+                    group: selectedGroup,
+                    title: values.title,
+                    amount: values.amount,
+                  });
                 })}
               >
-                <Input placeholder="Bill title" disabled={!selectedGroup} {...billForm.register("title")} />
+                <Input
+                  placeholder="Bill title"
+                  disabled={!selectedGroup}
+                  {...billForm.register("title")}
+                />
                 <Input
                   type="number"
                   step="0.01"
@@ -686,7 +739,11 @@ export function WhatsappShell() {
                   disabled={!selectedGroup}
                   {...billForm.register("amount", { valueAsNumber: true })}
                 />
-                <Button type="submit" variant="outline" disabled={!selectedGroup || billMutation.isPending}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={!selectedGroup || billMutation.isPending}
+                >
                   <BadgeIndianRupee className="size-4" />
                   Add Bill
                 </Button>
@@ -696,8 +753,8 @@ export function WhatsappShell() {
                 variant="outline"
                 disabled={!selectedGroup || sendLocationMutation.isPending}
                 onClick={() => {
-                  if (!selectedGroup) return
-                  sendLocationMutation.mutate(selectedGroup.id)
+                  if (!selectedGroup) return;
+                  sendLocationMutation.mutate(selectedGroup.id);
                 }}
               >
                 <MapPin className="size-4" />
@@ -713,5 +770,5 @@ export function WhatsappShell() {
         </main>
       </div>
     </div>
-  )
+  );
 }

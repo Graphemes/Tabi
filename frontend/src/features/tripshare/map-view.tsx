@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import { MapPin, Search } from "lucide-react"
+import { MapPin, Search } from "lucide-react";
 
 export function MapView() {
   return (
@@ -24,5 +24,5 @@ export function MapView() {
         <p className="text-sm text-[#6B7280]">Map view</p>
       </div>
     </div>
-  )
+  );
 }

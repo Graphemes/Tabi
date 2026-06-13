@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 export function ExpensesView() {
   return (
@@ -11,5 +11,5 @@ export function ExpensesView() {
         Track and split expenses with your group members
       </p>
     </div>
-  )
+  );
 }

@@ -23,10 +23,7 @@ export class UsersController {
   }
 
   @Patch('profile')
-  updateProfile(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: UpdateProfileDto,
-  ) {
+  updateProfile(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.userId, dto);
   }
 

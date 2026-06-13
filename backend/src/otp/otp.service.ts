@@ -7,12 +7,9 @@ import * as bcrypt from 'bcrypt';
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
 
-  constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
-  ) {}
+  constructor(private prisma: PrismaService, private jwtService: JwtService) {}
 
-  async requestOtp(phone: string, name?: string) {
+  async requestOtp(phone: string) {
     const normalized = phone.replace(/\s+/g, '');
 
     const recent = await this.prisma.otpCode.findFirst({
@@ -34,7 +31,7 @@ export class OtpService {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.prisma.otpCode.create({
-      data: { phone: normalized, otp, name, expiresAt },
+      data: { phone: normalized, otp, expiresAt },
     });
 
     this.logger.log(`[OTP] For ${normalized}: ${otp}`);
@@ -83,15 +80,7 @@ export class OtpService {
     }
 
     if (!user) {
-      const userName = record.name || 'User';
-      const baseUsername = userName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '')
-        .slice(0, 24);
-
-      const username = `${baseUsername || 'user'}-${normalized.slice(-4)}`;
+      const username = `user-${normalized.slice(-4)}`;
       const randomPassword = await bcrypt.hash(`otp:${normalized}`, 10);
 
       user = await this.prisma.user.create({
@@ -100,6 +89,7 @@ export class OtpService {
           phone: normalized,
           username,
           password: randomPassword,
+          name: `User ${normalized.slice(-4)}`,
         },
       });
     }
@@ -115,6 +105,7 @@ export class OtpService {
         id: user.id,
         email: user.email,
         username: user.username,
+        name: user.name,
       },
       phone: normalized,
     };

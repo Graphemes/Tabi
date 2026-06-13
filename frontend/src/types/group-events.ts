@@ -1,27 +1,27 @@
-import { CreateMessageDto } from "@/types/message"
-import { UpdateLiveLocationDto } from "@/types/location"
+import { CreateMessageDto } from "@/types/message";
+import { UpdateLiveLocationDto } from "@/types/location";
 
 export type GroupJoinPayload = {
-  groupId: number
-}
+  groupId: number;
+};
 
 export type MessageSendPayload = {
-  groupId: number
-  message: CreateMessageDto
-}
+  groupId: number;
+  message: CreateMessageDto;
+};
 
 export type TypingPayload = {
-  groupId: number
-}
+  groupId: number;
+};
 
 export type LocationTogglePayload = {
-  groupId: number
+  groupId: number;
   payload: {
-    enabled: boolean
-  }
-}
+    enabled: boolean;
+  };
+};
 
 export type LocationUpdatePayload = {
-  groupId: number
-  payload: UpdateLiveLocationDto
-}
+  groupId: number;
+  payload: UpdateLiveLocationDto;
+};

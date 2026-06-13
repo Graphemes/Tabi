@@ -35,12 +35,18 @@ export class FriendsController {
   }
 
   @Get('discover')
-  discoverUsers(@CurrentUser() user: AuthUser, @Query() query: DiscoverUsersDto) {
+  discoverUsers(
+    @CurrentUser() user: AuthUser,
+    @Query() query: DiscoverUsersDto,
+  ) {
     return this.friendsService.discoverUsers(user.userId, query);
   }
 
   @Post('requests')
-  sendRequest(@CurrentUser() user: AuthUser, @Body() dto: SendFriendRequestDto) {
+  sendRequest(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SendFriendRequestDto,
+  ) {
     return this.friendsService.sendRequest(user.userId, dto);
   }
 
@@ -53,7 +59,10 @@ export class FriendsController {
   }
 
   @Get('requests/sent')
-  listSent(@CurrentUser() user: AuthUser, @Query() query: ListFriendRequestsDto) {
+  listSent(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListFriendRequestsDto,
+  ) {
     return this.friendsService.listSentRequests(user.userId, query);
   }
 
@@ -72,7 +81,10 @@ export class FriendsController {
 
   @Patch('requests/:requestId/cancel')
   cancel(@CurrentUser() user: AuthUser, @Param('requestId') requestId: string) {
-    return this.friendsService.cancelSentRequest(user.userId, Number(requestId));
+    return this.friendsService.cancelSentRequest(
+      user.userId,
+      Number(requestId),
+    );
   }
 
   @Delete(':friendUserId')

@@ -14,10 +14,7 @@ export class ActivityController {
   ) {}
 
   @Get()
-  async list(
-    @Param('groupId') groupId: string,
-    @CurrentUser() user: AuthUser,
-  ) {
+  async list(@Param('groupId') groupId: string, @CurrentUser() user: AuthUser) {
     const parsedGroupId = Number(groupId);
     await this.groupAccessService.ensureMember(parsedGroupId, user.userId);
     return this.activityService.list(parsedGroupId);

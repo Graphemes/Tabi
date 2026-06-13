@@ -25,7 +25,9 @@ export class MessagesService {
       type === MessageType.LOCATION &&
       (dto.latitude === undefined || dto.longitude === undefined)
     ) {
-      throw new BadRequestException('Location message needs latitude and longitude');
+      throw new BadRequestException(
+        'Location message needs latitude and longitude',
+      );
     }
 
     const message = await this.prisma.message.create({

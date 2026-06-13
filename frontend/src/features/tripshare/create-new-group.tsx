@@ -1,9 +1,14 @@
-"use client"
+"use client";
 
-import { useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Camera, Check, Loader2, Plus, Search, UserPlus, X } from "lucide-react"
-import { discoverUsers, sendFriendRequest, createGroup, addGroupMember } from "@/features/whatsapp/api"
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Camera, Check, Loader2, Plus, Search, UserPlus, X } from "lucide-react";
+import {
+  discoverUsers,
+  sendFriendRequest,
+  createGroup,
+  addGroupMember,
+} from "@/features/whatsapp/api";
 
 function initials(name: string) {
   return name
@@ -11,68 +16,72 @@ function initials(name: string) {
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase()
+    .toUpperCase();
 }
 
 function getDisplayName(u: { name?: string | null; username: string; email: string }) {
-  return u.name || u.username || u.email
+  return u.name || u.username || u.email;
 }
 
 type Props = {
-  onBack: () => void
-  onGroupCreated?: () => void
-}
+  onBack: () => void;
+  onGroupCreated?: () => void;
+};
 
 export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
-  const queryClient = useQueryClient()
-  const [groupName, setGroupName] = useState("")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const queryClient = useQueryClient();
+  const [groupName, setGroupName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const searchQuery_ = useQuery({
     queryKey: ["discover", searchQuery],
     queryFn: () => discoverUsers(searchQuery || undefined),
     enabled: true,
-  })
+  });
 
   const contacts = useMemo(() => {
-    const data = searchQuery_.data ?? []
-    return data.filter((u) => !u.isFriend).slice(0, 20)
-  }, [searchQuery_.data])
+    const data = searchQuery_.data ?? [];
+    return data.filter((u) => !u.isFriend).slice(0, 20);
+  }, [searchQuery_.data]);
 
   const createGroupMutation = useMutation({
     mutationFn: async () => {
-      const group = await createGroup({ name: groupName })
+      const group = await createGroup({ name: groupName });
       for (const userId of selectedIds) {
-        await addGroupMember(group.id, userId)
+        await addGroupMember(group.id, userId);
       }
-      return group
+      return group;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["groups"] })
-      onGroupCreated?.()
-      onBack()
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      onGroupCreated?.();
+      onBack();
     },
-  })
+  });
 
   const sendRequestMutation = useMutation({
     mutationFn: (receiverId: number) => sendFriendRequest(receiverId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["discover"] })
+      queryClient.invalidateQueries({ queryKey: ["discover"] });
     },
-  })
+  });
 
   const toggleMember = (userId: number) => {
     setSelectedIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
-    )
-  }
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center justify-between px-4 pb-3 pt-4">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className="rounded-full p-1 text-[#404848] hover:bg-[#DCE9FF]">
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-full p-1 text-[#404848] hover:bg-[#DCE9FF]"
+          >
             <ArrowLeft className="size-5" />
           </button>
           <h1 className="text-lg font-bold text-[#003535]">New Group</h1>
@@ -93,7 +102,9 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
             <Camera className="size-6 text-[#6B7280]" />
           </div>
           <div className="flex-1 space-y-1.5">
-            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">GROUP NAME</label>
+            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">
+              GROUP NAME
+            </label>
             <input
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
@@ -118,7 +129,7 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
             <p className="mb-2 text-xs font-semibold tracking-[0.05em] text-[#6B7280]">SUGGESTED</p>
             <div className="space-y-1">
               {contacts.map((user) => {
-                const isSelected = selectedIds.includes(user.id)
+                const isSelected = selectedIds.includes(user.id);
                 return (
                   <button
                     key={user.id}
@@ -149,8 +160,8 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
                       <button
                         type="button"
                         onClick={(e) => {
-                          e.stopPropagation()
-                          sendRequestMutation.mutate(user.id)
+                          e.stopPropagation();
+                          sendRequestMutation.mutate(user.id);
                         }}
                         className="rounded-full p-1.5 text-[#003535] hover:bg-[#DCE9FF]"
                       >
@@ -158,7 +169,7 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
                       </button>
                     )}
                   </button>
-                )
+                );
               })}
             </div>
           </div>
@@ -175,5 +186,5 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
         )}
       </div>
     </div>
-  )
+  );
 }

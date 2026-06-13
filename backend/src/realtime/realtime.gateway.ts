@@ -290,7 +290,11 @@ export class RealtimeGateway
 
       client.emit('group:left', { groupId });
 
-      const stillOnline = this.hasAnotherSocketInGroup(user.userId, groupId, client.id);
+      const stillOnline = this.hasAnotherSocketInGroup(
+        user.userId,
+        groupId,
+        client.id,
+      );
       if (!stillOnline) {
         this.server.to(room).emit('presence:update', {
           groupId,
@@ -315,7 +319,11 @@ export class RealtimeGateway
 
     try {
       await this.groupAccessService.ensureMember(groupId, user.userId);
-      const saved = await this.messagesService.create(groupId, user.userId, body.message);
+      const saved = await this.messagesService.create(
+        groupId,
+        user.userId,
+        body.message,
+      );
       this.server.to(this.getGroupRoom(groupId)).emit('message:new', saved);
       return saved;
     } catch (error) {

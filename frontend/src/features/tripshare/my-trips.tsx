@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import { useMemo, useState } from "react"
-import { Search, MapPin, Users, Plus } from "lucide-react"
-import { ApiGroup } from "@/features/whatsapp/api"
-import type { FilterChip } from "./types"
+import { useMemo, useState } from "react";
+import { Search, MapPin, Users, Plus } from "lucide-react";
+import { ApiGroup } from "@/features/whatsapp/api";
+import type { FilterChip } from "./types";
 
-const FILTERS: FilterChip[] = ["All Trips", "Active", "Pending", "Archived"]
+const FILTERS: FilterChip[] = ["All Trips", "Active", "Pending", "Archived"];
 
 function initials(name: string) {
   return name
@@ -13,41 +13,39 @@ function initials(name: string) {
     .map((p) => p[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase()
+    .toUpperCase();
 }
 
 function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return "just now"
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days === 1) return "Yesterday"
-  return `${days}d ago`
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "Yesterday";
+  return `${days}d ago`;
 }
 
 type Props = {
-  groups: ApiGroup[]
-  onSelectGroup: (id: number) => void
-  onFabClick: () => void
-}
+  groups: ApiGroup[];
+  onSelectGroup: (id: number) => void;
+  onFabClick: () => void;
+};
 
 export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
-  const [search, setSearch] = useState("")
-  const [activeFilter, setActiveFilter] = useState<FilterChip>("All Trips")
+  const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterChip>("All Trips");
 
   const filtered = useMemo(() => {
-    let result = groups
+    let result = groups;
     if (search.trim()) {
-      const q = search.toLowerCase()
-      result = result.filter((g) => g.name.toLowerCase().includes(q))
+      const q = search.toLowerCase();
+      result = result.filter((g) => g.name.toLowerCase().includes(q));
     }
-    return result
-      .slice()
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  }, [groups, search])
+    return result.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [groups, search]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -64,7 +62,7 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           {FILTERS.map((chip) => {
-            const active = activeFilter === chip
+            const active = activeFilter === chip;
             return (
               <button
                 key={chip}
@@ -78,7 +76,7 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
               >
                 {chip}
               </button>
-            )
+            );
           })}
         </div>
       </div>
@@ -96,17 +94,13 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
                 {group.photoUrl ? (
                   <img src={group.photoUrl} alt="" className="size-full object-cover" />
                 ) : (
-                  <span className="text-lg font-bold text-[#2A3030]">
-                    {initials(group.name)}
-                  </span>
+                  <span className="text-lg font-bold text-[#2A3030]">{initials(group.name)}</span>
                 )}
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="truncate text-base font-semibold text-[#0B1C30]">
-                    {group.name}
-                  </h3>
+                  <h3 className="truncate text-base font-semibold text-[#0B1C30]">{group.name}</h3>
                   <span className="shrink-0 text-xs font-semibold tracking-[0.05em] text-[#404848]">
                     {timeAgo(group.updatedAt)}
                   </span>
@@ -130,7 +124,7 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
                 </div>
               </div>
             </button>
-          )
+          );
         })}
 
         {filtered.length === 0 && (
@@ -146,5 +140,5 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
         <Plus className="size-6" />
       </button>
     </div>
-  )
+  );
 }

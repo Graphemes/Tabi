@@ -34,7 +34,9 @@ export class FriendsService {
 
   async sendRequest(senderId: number, dto: SendFriendRequestDto) {
     if (senderId === dto.receiverId) {
-      throw new BadRequestException('You cannot send a friend request to yourself');
+      throw new BadRequestException(
+        'You cannot send a friend request to yourself',
+      );
     }
 
     await this.ensureUserExists(dto.receiverId);
@@ -91,10 +93,22 @@ export class FriendsService {
           },
           include: {
             sender: {
-              select: { id: true, email: true, username: true },
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
             },
             receiver: {
-              select: { id: true, email: true, username: true },
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
             },
           },
         })
@@ -106,10 +120,22 @@ export class FriendsService {
           },
           include: {
             sender: {
-              select: { id: true, email: true, username: true },
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
             },
             receiver: {
-              select: { id: true, email: true, username: true },
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
             },
           },
         });
@@ -124,17 +150,30 @@ export class FriendsService {
       },
       include: {
         userA: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
         userB: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
     return friendships.map((friendship) => {
-      const friend = friendship.userAId === userId ? friendship.userB : friendship.userA;
+      const friend =
+        friendship.userAId === userId ? friendship.userB : friendship.userA;
       return {
         friendshipId: friendship.id,
         friend,
@@ -151,7 +190,13 @@ export class FriendsService {
       },
       include: {
         sender: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -166,7 +211,13 @@ export class FriendsService {
       },
       include: {
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -178,10 +229,22 @@ export class FriendsService {
       where: { id: requestId },
       include: {
         sender: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
     });
@@ -198,7 +261,10 @@ export class FriendsService {
       throw new BadRequestException('Only pending requests can be accepted');
     }
 
-    const { userAId, userBId } = this.pair(request.senderId, request.receiverId);
+    const { userAId, userBId } = this.pair(
+      request.senderId,
+      request.receiverId,
+    );
 
     const [updatedRequest, friendship] = await this.prisma.$transaction([
       this.prisma.friendRequest.update({
@@ -206,10 +272,22 @@ export class FriendsService {
         data: { status: FriendRequestStatus.ACCEPTED },
         include: {
           sender: {
-            select: { id: true, email: true, username: true },
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              name: true,
+              phone: true,
+            },
           },
           receiver: {
-            select: { id: true, email: true, username: true },
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              name: true,
+              phone: true,
+            },
           },
         },
       }),
@@ -271,10 +349,22 @@ export class FriendsService {
       data: { status: FriendRequestStatus.REJECTED },
       include: {
         sender: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
     });
@@ -302,10 +392,22 @@ export class FriendsService {
       data: { status: FriendRequestStatus.CANCELLED },
       include: {
         sender: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
         },
       },
     });
@@ -342,16 +444,55 @@ export class FriendsService {
   }
 
   async addContact(userId: number, dto: AddContactDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { phone: dto.phone },
-      select: { id: true, username: true, email: true, phone: true },
-    });
+    const results: Array<{ phone: string; status: string; error?: string }> =
+      [];
 
-    if (!user) {
-      throw new NotFoundException('No user found with this phone number');
+    for (const item of dto.contacts) {
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { phone: item.phone },
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            name: true,
+          },
+        });
+
+        if (!user) {
+          results.push({
+            phone: item.phone,
+            status: 'error',
+            error: 'No user found with this phone number',
+          });
+          continue;
+        }
+
+        if (item.name && !user.name) {
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { name: item.name },
+          });
+        }
+
+        const request = await this.sendRequest(userId, {
+          receiverId: user.id,
+        });
+        results.push({
+          phone: item.phone,
+          status: 'success',
+        });
+      } catch (err: any) {
+        results.push({
+          phone: item.phone,
+          status: 'error',
+          error: err.message || 'Failed to add contact',
+        });
+      }
     }
 
-    return this.sendRequest(userId, { receiverId: user.id });
+    return { results };
   }
 
   async discoverUsers(userId: number, query: DiscoverUsersDto) {
@@ -367,7 +508,9 @@ export class FriendsService {
 
     const friendIds = new Set<number>();
     for (const friendship of friendships) {
-      friendIds.add(friendship.userAId === userId ? friendship.userBId : friendship.userAId);
+      friendIds.add(
+        friendship.userAId === userId ? friendship.userBId : friendship.userAId,
+      );
     }
 
     const pendingRequests = await this.prisma.friendRequest.findMany({
@@ -383,7 +526,9 @@ export class FriendsService {
 
     const pendingIds = new Set<number>();
     for (const request of pendingRequests) {
-      pendingIds.add(request.senderId === userId ? request.receiverId : request.senderId);
+      pendingIds.add(
+        request.senderId === userId ? request.receiverId : request.senderId,
+      );
     }
 
     const users = await this.prisma.user.findMany({
