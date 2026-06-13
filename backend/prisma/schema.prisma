@@ -18,6 +18,7 @@ model User {
   email    String  @unique
   phone    String? @unique
   username String  @unique
+  name     String?
   password String
 
   createdGroups      Group[]              @relation("GroupCreator")

@@ -1,5 +1,5 @@
-import { WhatsappShell } from "@/features/whatsapp/whatsapp-shell";
+import { TripShareShell } from "@/features/tripshare/tripshare-shell"
 
 export default function Home() {
-  return <WhatsappShell />
+  return <TripShareShell />
 }

@@ -10,6 +10,7 @@ import { SendFriendRequestDto } from './dto/send-friend-request.dto';
 import { RespondFriendRequestDto } from './dto/respond-friend-request.dto';
 import { ListFriendRequestsDto } from './dto/list-friend-requests.dto';
 import { DiscoverUsersDto } from './dto/discover-users.dto';
+import { AddContactDto } from './dto/add-contact.dto';
 
 @Injectable()
 export class FriendsService {
@@ -338,6 +339,19 @@ export class FriendsService {
       removed: true,
       friendUserId,
     };
+  }
+
+  async addContact(userId: number, dto: AddContactDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { phone: dto.phone },
+      select: { id: true, username: true, email: true, phone: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('No user found with this phone number');
+    }
+
+    return this.sendRequest(userId, { receiverId: user.id });
   }
 
   async discoverUsers(userId: number, query: DiscoverUsersDto) {

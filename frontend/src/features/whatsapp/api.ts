@@ -127,6 +127,42 @@ export const sendLocationMessage = async (groupId: number) => {
   return data
 }
 
+export type ApiProfile = {
+  id: number
+  email: string
+  username: string
+  name: string | null
+  phone: string | null
+}
+
+export const getProfile = async () => {
+  const { data } = await http.get<ApiProfile>("/users/profile")
+  return data
+}
+
+export const updateProfile = async (payload: {
+  name?: string
+  username?: string
+  email?: string
+  phone?: string
+}) => {
+  const { data } = await http.patch<ApiProfile>("/users/profile", payload)
+  return data
+}
+
+export const changePassword = async (payload: {
+  currentPassword: string
+  newPassword: string
+}) => {
+  const { data } = await http.post("/auth/change-password", payload)
+  return data
+}
+
+export const deleteAccount = async () => {
+  const { data } = await http.delete("/users/account")
+  return data
+}
+
 export const createExpense = async (
   group: ApiGroup,
   userId: number,

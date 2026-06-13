@@ -11,6 +11,7 @@ import { ActivityModule } from './activity/activity.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { FriendsModule } from './friends/friends.module';
 import { OtpModule } from './otp/otp.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { OtpModule } from './otp/otp.module';
     RealtimeModule,
     FriendsModule,
     OtpModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

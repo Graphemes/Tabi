@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { MobileLoginDto } from './dto/mobile-login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -31,5 +33,14 @@ export class AuthController {
   @Get('profile')
   async getProfile(@CurrentUser() user: any) {
     return { message: 'Protected route', user };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  async changePassword(
+    @CurrentUser() user: any,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.userId, dto);
   }
 }

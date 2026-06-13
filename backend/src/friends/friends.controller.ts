@@ -17,11 +17,17 @@ import { SendFriendRequestDto } from './dto/send-friend-request.dto';
 import { RespondFriendRequestDto } from './dto/respond-friend-request.dto';
 import { ListFriendRequestsDto } from './dto/list-friend-requests.dto';
 import { DiscoverUsersDto } from './dto/discover-users.dto';
+import { AddContactDto } from './dto/add-contact.dto';
 
 @Controller('friends')
 @UseGuards(JwtAuthGuard)
 export class FriendsController {
   constructor(private readonly friendsService: FriendsService) {}
+
+  @Post('add-contact')
+  addContact(@CurrentUser() user: AuthUser, @Body() dto: AddContactDto) {
+    return this.friendsService.addContact(user.userId, dto);
+  }
 
   @Get()
   listFriends(@CurrentUser() user: AuthUser) {
