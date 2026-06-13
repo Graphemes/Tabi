@@ -1,0 +1,145 @@
+import { http } from "@/lib/http"
+
+export type ApiUser = {
+  id: number
+  email: string
+  username: string
+  name?: string
+  mobile?: string
+}
+
+export type AuthResponse = {
+  access_token: string
+  user: ApiUser
+  mobile?: string
+  name?: string
+  phone?: string
+}
+
+export type ApiFriend = {
+  friendshipId: number
+  friend: ApiUser
+  createdAt: string
+}
+
+export type DiscoverUser = ApiUser & {
+  isFriend: boolean
+  hasPendingRequest: boolean
+}
+
+export type ApiGroup = {
+  id: number
+  name: string
+  description?: string | null
+  photoUrl?: string | null
+  defaultCurrency: string
+  members: Array<{
+    userId: number
+    user: ApiUser
+  }>
+  updatedAt: string
+}
+
+export type ApiMessage = {
+  id: number
+  groupId: number
+  senderId: number
+  type: "TEXT" | "IMAGE" | "VIDEO" | "LOCATION" | "SYSTEM"
+  content?: string | null
+  mediaUrl?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  createdAt: string
+}
+
+export const mobileLogin = async (payload: { name: string; mobile: string }) => {
+  const { data } = await http.post<AuthResponse>("/auth/mobile-login", payload)
+  return data
+}
+
+export const requestOtp = async (payload: { phone: string; name?: string }) => {
+  const { data } = await http.post<{ message: string }>("/auth/request-otp", payload)
+  return data
+}
+
+export const verifyOtp = async (payload: { phone: string; otp: string }) => {
+  const { data } = await http.post<AuthResponse>("/auth/verify-otp", payload)
+  return data
+}
+
+export const getFriends = async () => {
+  const { data } = await http.get<ApiFriend[]>("/friends")
+  return data
+}
+
+export const discoverUsers = async (query = "") => {
+  const { data } = await http.get<DiscoverUser[]>("/friends/discover", {
+    params: query ? { query } : undefined,
+  })
+  return data
+}
+
+export const sendFriendRequest = async (receiverId: number) => {
+  const { data } = await http.post("/friends/requests", { receiverId })
+  return data
+}
+
+export const getGroups = async () => {
+  const { data } = await http.get<ApiGroup[]>("/groups")
+  return data
+}
+
+export const createGroup = async (payload: { name: string }) => {
+  const { data } = await http.post<ApiGroup>("/groups", payload)
+  return data
+}
+
+export const addGroupMember = async (groupId: number, userId: number) => {
+  const { data } = await http.post(`/groups/${groupId}/members`, { userId })
+  return data
+}
+
+export const getMessages = async (groupId: number) => {
+  const { data } = await http.get<ApiMessage[]>(`/groups/${groupId}/messages`)
+  return data.slice().reverse()
+}
+
+export const sendMessage = async (
+  groupId: number,
+  payload: {
+    type?: "TEXT" | "LOCATION"
+    content?: string
+    latitude?: number
+    longitude?: number
+  },
+) => {
+  const { data } = await http.post<ApiMessage>(`/groups/${groupId}/messages`, payload)
+  return data
+}
+
+export const sendLocationMessage = async (groupId: number) => {
+  const latitude = 28.6139
+  const longitude = 77.209
+  const { data } = await http.post<ApiMessage>(`/groups/${groupId}/location/message`, {
+    latitude,
+    longitude,
+  })
+  return data
+}
+
+export const createExpense = async (
+  group: ApiGroup,
+  userId: number,
+  payload: { title: string; amount: number },
+) => {
+  const memberIds = group.members.map((member) => member.userId)
+  const { data } = await http.post(`/groups/${group.id}/expenses`, {
+    title: payload.title,
+    totalAmount: payload.amount,
+    currency: group.defaultCurrency || "USD",
+    splitType: "EQUAL",
+    paidBy: [{ userId, amount: payload.amount }],
+    participants: memberIds.map((memberId) => ({ userId: memberId })),
+  })
+  return data
+}

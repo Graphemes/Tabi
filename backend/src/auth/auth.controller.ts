@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { MobileLoginDto } from './dto/mobile-login.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -20,6 +21,11 @@ export class AuthController {
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.email, loginDto.password);
+  }
+
+  @Post('mobile-login')
+  async mobileLogin(@Body() dto: MobileLoginDto) {
+    return this.authService.loginWithMobile(dto.mobile, dto.name);
   }
 
   @Get('profile')

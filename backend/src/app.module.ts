@@ -9,6 +9,8 @@ import { MessagesModule } from './messages/messages.module';
 import { LocationModule } from './location/location.module';
 import { ActivityModule } from './activity/activity.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { FriendsModule } from './friends/friends.module';
+import { OtpModule } from './otp/otp.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { RealtimeModule } from './realtime/realtime.module';
     LocationModule,
     ActivityModule,
     RealtimeModule,
+    FriendsModule,
+    OtpModule,
   ],
   controllers: [AppController],
   providers: [AppService],
