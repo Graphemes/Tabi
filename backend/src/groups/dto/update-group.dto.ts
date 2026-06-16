@@ -1,0 +1,24 @@
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+export class UpdateGroupDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(3)
+  defaultCurrency?: string;
+}

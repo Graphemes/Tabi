@@ -1,0 +1,306 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int     @id @default(autoincrement())
+  email    String? @unique
+  phone    String? @unique
+  username String? @unique
+  name     String?
+  password String
+  refreshTokenHash String?
+
+  createdGroups      Group[]              @relation("GroupCreator")
+  groupMembers       GroupMember[]
+  createdExpenses    Expense[]            @relation("ExpenseCreator")
+  expenseParticipants ExpenseParticipant[]
+  expenseItemParticipants ExpenseItemParticipant[]
+  sentMessages       Message[]
+  settlementsPaid    Settlement[]         @relation("SettlementPayer")
+  settlementsReceived Settlement[]        @relation("SettlementReceiver")
+  savedSplitRules    SavedSplitRule[]
+  activityLogs       ActivityLog[]
+  liveLocations      LiveLocation[]
+  contacts    Contact[] @relation("ContactOwner")
+  contactedBy Contact[] @relation("ContactTarget")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation("ContactOwner", fields: [userId], references: [id], onDelete: Cascade)
+  contactId Int
+  contact   User     @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
+  name      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, contactId])
+  @@index([userId])
+}
+
+model Group {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  photoUrl    String?
+  defaultCurrency String @default("USD")
+
+  createdById Int
+  createdBy   User      @relation("GroupCreator", fields: [createdById], references: [id])
+
+  members       GroupMember[]
+  expenses      Expense[]
+  settlements   Settlement[]
+  messages      Message[]
+  activityLogs  ActivityLog[]
+  liveLocations LiveLocation[]
+  splitRules    SavedSplitRule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GroupMember {
+  id                     Int      @id @default(autoincrement())
+  role                   GroupRole @default(MEMBER)
+  locationSharingEnabled Boolean  @default(false)
+
+  groupId Int
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+
+  joinedAt DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model Expense {
+  id            Int              @id @default(autoincrement())
+  groupId       Int
+  group         Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdById   Int
+  createdBy     User             @relation("ExpenseCreator", fields: [createdById], references: [id])
+  title         String
+  totalAmount   Decimal          @db.Decimal(14, 2)
+  currency      String
+  category      ExpenseCategory?
+  notes         String?
+  attachmentUrl String?
+  expenseDate   DateTime
+  splitType     ExpenseSplitType
+  isRecurring   Boolean          @default(false)
+  recurringRule String?
+  status        ExpenseStatus    @default(ACTIVE)
+
+  participants ExpenseParticipant[]
+  items        ExpenseItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, expenseDate])
+  @@index([createdById])
+}
+
+model ExpenseParticipant {
+  id               Int      @id @default(autoincrement())
+  expenseId        Int
+  expense          Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId           Int
+  user             User     @relation(fields: [userId], references: [id])
+  owedAmount       Decimal  @default(0) @db.Decimal(14, 2)
+  paidAmount       Decimal  @default(0) @db.Decimal(14, 2)
+  exactAmount      Decimal? @db.Decimal(14, 2)
+  percentage       Decimal? @db.Decimal(6, 3)
+  shares           Int?
+  adjustmentAmount Decimal? @db.Decimal(14, 2)
+  metadata         Json?
+
+  @@unique([expenseId, userId])
+  @@index([userId])
+}
+
+model ExpenseItem {
+  id        Int      @id @default(autoincrement())
+  expenseId Int
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  name      String
+  amount    Decimal  @db.Decimal(14, 2)
+  quantity  Int      @default(1)
+  metadata  Json?
+
+  participants ExpenseItemParticipant[]
+}
+
+model ExpenseItemParticipant {
+  id      Int         @id @default(autoincrement())
+  itemId  Int
+  item    ExpenseItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  userId  Int
+  user    User        @relation(fields: [userId], references: [id])
+  amount  Decimal     @db.Decimal(14, 2)
+
+  @@unique([itemId, userId])
+}
+
+model Settlement {
+  id         Int              @id @default(autoincrement())
+  groupId    Int
+  group      Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payerId    Int
+  payer      User             @relation("SettlementPayer", fields: [payerId], references: [id])
+  receiverId Int
+  receiver   User             @relation("SettlementReceiver", fields: [receiverId], references: [id])
+  amount     Decimal          @db.Decimal(14, 2)
+  currency   String
+  note       String?
+  status     SettlementStatus @default(COMPLETED)
+  settledAt  DateTime         @default(now())
+  createdAt  DateTime         @default(now())
+
+  @@index([groupId, settledAt])
+}
+
+model Message {
+  id        Int         @id @default(autoincrement())
+  groupId   Int
+  group     Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  senderId  Int
+  sender    User        @relation(fields: [senderId], references: [id])
+  type      MessageType @default(TEXT)
+  content   String?
+  mediaUrl  String?
+  latitude  Float?
+  longitude Float?
+  mapLabel  String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([groupId, createdAt])
+}
+
+model LiveLocation {
+  id         Int      @id @default(autoincrement())
+  groupId    Int
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id])
+  latitude   Float
+  longitude  Float
+  accuracy   Float?
+  speed      Float?
+  heading    Float?
+  sharedAt   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([groupId, userId])
+  @@index([groupId, sharedAt])
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  groupId    Int
+  group      Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actorId    Int
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String
+  entityType String?
+  entityId   Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([groupId, createdAt])
+}
+
+model SavedSplitRule {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  user      User             @relation(fields: [userId], references: [id])
+  groupId   Int?
+  group     Group?           @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  splitType ExpenseSplitType
+  config    Json
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([groupId])
+}
+
+model OtpCode {
+  id        Int      @id @default(autoincrement())
+  phone     String
+  otp       String
+  name      String?
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone, otp])
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
+}
+
+enum ExpenseSplitType {
+  EQUAL
+  UNEQUAL
+  PERCENTAGE
+  SHARE
+  ADJUSTMENT
+  ITEMIZED
+  CUSTOM
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  FOOD
+  STAY
+  TRANSPORT
+  SHOPPING
+  ENTERTAINMENT
+  UTILITIES
+  OTHER
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  LOCATION
+  SYSTEM
+}
+
+enum SettlementStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  DELETED
+}
+
+
