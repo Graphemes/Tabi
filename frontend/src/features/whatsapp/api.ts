@@ -2,29 +2,33 @@ import { http } from "@/lib/http";
 
 export type ApiUser = {
   id: number;
-  email: string;
-  username: string;
-  name?: string;
+  email?: string | null;
+  username?: string | null;
+  name?: string | null;
   mobile?: string;
+  phone?: string | null;
+  contactName?: string | null;
 };
 
 export type AuthResponse = {
   access_token: string;
+  refresh_token: string;
   user: ApiUser;
   mobile?: string;
   name?: string;
   phone?: string;
 };
 
-export type ApiFriend = {
-  friendshipId: number;
-  friend: ApiUser;
+export type ApiContact = {
+  contactId: number;
+  name?: string;
+  user: ApiUser;
   createdAt: string;
 };
 
 export type DiscoverUser = ApiUser & {
-  isFriend: boolean;
-  hasPendingRequest: boolean;
+  isContact: boolean;
+  contactName?: string | null;
 };
 
 export type ApiGroup = {
@@ -67,8 +71,8 @@ export const verifyOtp = async (payload: { phone: string; otp: string }) => {
   return data;
 };
 
-export const getFriends = async () => {
-  const { data } = await http.get<ApiFriend[]>("/friends");
+export const listContacts = async () => {
+  const { data } = await http.get<ApiContact[]>("/friends");
   return data;
 };
 
@@ -79,8 +83,12 @@ export const discoverUsers = async (query = "") => {
   return data;
 };
 
-export const sendFriendRequest = async (receiverId: number) => {
-  const { data } = await http.post("/friends/requests", { receiverId });
+export const addContact = async (payload: {
+  contacts: Array<{ phone: string; name?: string }>;
+}) => {
+  const { data } = await http.post<{
+    results: Array<{ phone: string; status: string; error?: string }>;
+  }>("/friends/add-contact", payload);
   return data;
 };
 
@@ -129,8 +137,8 @@ export const sendLocationMessage = async (groupId: number) => {
 
 export type ApiProfile = {
   id: number;
-  email: string;
-  username: string;
+  email: string | null;
+  username: string | null;
   name: string | null;
   phone: string | null;
 };
@@ -157,6 +165,11 @@ export const changePassword = async (payload: { currentPassword: string; newPass
 
 export const deleteAccount = async () => {
   const { data } = await http.delete("/users/account");
+  return data;
+};
+
+export const logout = async () => {
+  const { data } = await http.post("/auth/logout");
   return data;
 };
 

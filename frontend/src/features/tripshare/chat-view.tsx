@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, MapPin, Send, Loader2, MessageCircle } from "lucide-react";
-import { getMessages, sendMessage, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
+import { getMessages, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
 import { useAuthStore } from "@/store/auth-store";
 import { getSocket } from "@/lib/socket";
 
@@ -34,7 +34,7 @@ export function ChatView({ group, onBack }: Props) {
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
   useEffect(() => {
-    if (!accessToken || !group?.id) return;
+    if (!accessToken) return;
     const socket = getSocket(accessToken);
     const onMessage = (message: ApiMessage) => {
       queryClient.setQueryData<ApiMessage[]>(
@@ -46,27 +46,20 @@ export function ChatView({ group, onBack }: Props) {
       );
     };
     socket.on("message:new", onMessage);
-    socket.emit("group:join", { groupId: group.id });
     if (!socket.connected) socket.connect();
     return () => {
       socket.off("message:new", onMessage);
-      socket.emit("group:leave", { groupId: group.id });
     };
-  }, [accessToken, group?.id, queryClient]);
+  }, [accessToken, queryClient]);
 
   const handleSend = async () => {
     if (!group || !text.trim()) return;
     const socket = getSocket(accessToken);
-    if (socket.connected) {
-      socket.emit("message:send", {
-        groupId: group.id,
-        message: { type: "TEXT", content: text.trim() },
-      });
-    } else {
-      await sendMessage(group.id, { type: "TEXT", content: text.trim() });
-    }
+    socket.emit("message:send", {
+      groupId: group.id,
+      message: { type: "TEXT", content: text.trim() },
+    });
     setText("");
-    await queryClient.invalidateQueries({ queryKey: ["groups", group.id, "messages"] });
   };
 
   if (!group) {

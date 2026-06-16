@@ -14,6 +14,24 @@ export class UsersService {
     phone: true,
   };
 
+  async listUsers(query?: string) {
+    return this.prisma.user.findMany({
+      where: query
+        ? {
+            OR: [
+              { name: { contains: query, mode: 'insensitive' } },
+              { username: { contains: query, mode: 'insensitive' } },
+              { email: { contains: query, mode: 'insensitive' } },
+              { phone: { contains: query, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      select: this.userSelect,
+      orderBy: { username: 'asc' },
+      take: 100,
+    });
+  }
+
   async getProfile(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

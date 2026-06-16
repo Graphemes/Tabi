@@ -188,6 +188,16 @@ export class RealtimeGateway
       } as SocketUser;
       this.addSocketForUser(user.id, client.id);
 
+      const memberships = await this.prisma.groupMember.findMany({
+        where: { userId: user.id },
+        select: { groupId: true },
+      });
+      for (const membership of memberships) {
+        const room = this.getGroupRoom(membership.groupId);
+        await client.join(room);
+        this.trackSocketGroup(client.id, membership.groupId);
+      }
+
       client.emit('auth:ok', {
         user: {
           id: user.id,

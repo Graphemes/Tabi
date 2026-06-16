@@ -9,6 +9,30 @@ export class OtpService {
 
   constructor(private prisma: PrismaService, private jwtService: JwtService) {}
 
+  private async generateTokens(userId: number) {
+    const accessToken = this.jwtService.sign(
+      { sub: userId },
+      { expiresIn: '15m' },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, type: 'refresh' },
+      {
+        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+        expiresIn: '24h',
+      },
+    );
+
+    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash },
+    });
+
+    return { access_token: accessToken, refresh_token: refreshToken };
+  }
+
   async requestOtp(phone: string) {
     const normalized = phone.replace(/\s+/g, '');
 
@@ -66,41 +90,20 @@ export class OtpService {
     });
 
     if (!user) {
-      const syntheticEmail = `${normalized}@tabi.mobile`;
-      user = await this.prisma.user.findUnique({
-        where: { email: syntheticEmail },
-      });
-
-      if (user) {
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: { phone: normalized },
-        });
-      }
-    }
-
-    if (!user) {
-      const username = `user-${normalized.slice(-4)}`;
       const randomPassword = await bcrypt.hash(`otp:${normalized}`, 10);
 
       user = await this.prisma.user.create({
         data: {
-          email: `${normalized}@tabi.mobile`,
           phone: normalized,
-          username,
           password: randomPassword,
-          name: `User ${normalized.slice(-4)}`,
         },
       });
     }
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-    });
+    const tokens = await this.generateTokens(user.id);
 
     return {
-      access_token: token,
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,

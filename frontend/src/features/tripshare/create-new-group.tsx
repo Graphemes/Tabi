@@ -2,13 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Check, Loader2, Plus, Search, UserPlus, X } from "lucide-react";
-import {
-  discoverUsers,
-  sendFriendRequest,
-  createGroup,
-  addGroupMember,
-} from "@/features/whatsapp/api";
+import { ArrowLeft, Camera, Check, Loader2, Search } from "lucide-react";
+import { discoverUsers, createGroup, addGroupMember } from "@/features/whatsapp/api";
 
 function initials(name: string) {
   return name
@@ -19,8 +14,14 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function getDisplayName(u: { name?: string | null; username: string; email: string }) {
-  return u.name || u.username || u.email;
+function getDisplayName(u: {
+  contactName?: string | null;
+  name?: string | null;
+  username?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}) {
+  return u.contactName || u.name || u.username || u.email || u.phone || "Unknown";
 }
 
 type Props = {
@@ -42,7 +43,7 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
 
   const contacts = useMemo(() => {
     const data = searchQuery_.data ?? [];
-    return data.filter((u) => !u.isFriend).slice(0, 20);
+    return data.slice(0, 20);
   }, [searchQuery_.data]);
 
   const createGroupMutation = useMutation({
@@ -57,13 +58,6 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
       queryClient.invalidateQueries({ queryKey: ["groups"] });
       onGroupCreated?.();
       onBack();
-    },
-  });
-
-  const sendRequestMutation = useMutation({
-    mutationFn: (receiverId: number) => sendFriendRequest(receiverId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["discover"] });
     },
   });
 
@@ -148,25 +142,16 @@ export function CreateNewGroup({ onBack, onGroupCreated }: Props) {
                       <p className="truncate text-sm font-medium text-[#0B1C30]">
                         {getDisplayName(user)}
                       </p>
-                      <p className="truncate text-xs text-[#6B7280]">@{user.username}</p>
+                      <p className="truncate text-xs text-[#6B7280]">
+                        {user.phone ? user.phone : user.username ? `@${user.username}` : ""}
+                      </p>
                     </div>
-                    {user.isFriend ? (
-                      <Check className="size-5 text-emerald-500" />
-                    ) : isSelected ? (
+                    {isSelected ? (
                       <div className="flex size-6 items-center justify-center rounded-full border-2 border-[#003535] bg-[#003535]">
                         <Check className="size-3.5 text-white" />
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          sendRequestMutation.mutate(user.id);
-                        }}
-                        className="rounded-full p-1.5 text-[#003535] hover:bg-[#DCE9FF]"
-                      >
-                        <UserPlus className="size-4" />
-                      </button>
+                      <div className="flex size-6 items-center justify-center rounded-full border-2 border-[#BFC8C8]" />
                     )}
                   </button>
                 );

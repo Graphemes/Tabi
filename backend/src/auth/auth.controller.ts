@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { MobileLoginDto } from './dto/mobile-login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RefreshDto } from './dto/refresh.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
@@ -30,6 +31,11 @@ export class AuthController {
     return this.authService.loginWithMobile(dto.mobile, dto.name);
   }
 
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshDto) {
+    return this.authService.refresh(dto.refresh_token);
+  }
+
   @Get('profile')
   async getProfile(@CurrentUser() user: any) {
     return { message: 'Protected route', user };
@@ -42,5 +48,11 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(user.userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  async logout(@CurrentUser() user: any) {
+    return this.authService.logout(user.userId);
   }
 }

@@ -30,7 +30,7 @@ const loginSchema = z.object({
   mobile: z
     .string()
     .min(10, "Enter valid mobile number")
-    .regex(/^[+0-9\s-]{10,16}$/, "Only numbers, +, -, spaces"),
+    .regex(/^\d{10}$/, "Enter a valid 10-digit mobile number"),
 });
 
 type LoginSchema = z.infer<typeof loginSchema>;
@@ -73,8 +73,10 @@ export function TripShareShell() {
     onSuccess: (data) => {
       setAuth({
         accessToken: data.access_token,
+        refreshToken: data.refresh_token,
         user: { ...data.user, phone: data.phone, name: data.user.name || "User" },
       });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
     },
   });
 
@@ -160,13 +162,27 @@ export function TripShareShell() {
             <form
               className="space-y-4"
               onSubmit={loginForm.handleSubmit((values) => {
-                setPendingPhone(values.mobile);
-                requestOtpMutation.mutate(values.mobile);
+                const fullPhone = `+91${values.mobile}`;
+                setPendingPhone(fullPhone);
+                requestOtpMutation.mutate(fullPhone);
               })}
             >
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-[#0B1C30]">Mobile Number</label>
-                <Input placeholder="+91 98XXXXXXXX" {...loginForm.register("mobile")} />
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[#0B1C30]">
+                    +91
+                  </span>
+                  <Input
+                    placeholder="98XXXXXXXX"
+                    className="pl-14"
+                    value={loginForm.watch("mobile")}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      loginForm.setValue("mobile", val, { shouldValidate: true });
+                    }}
+                  />
+                </div>
                 {loginForm.formState.errors.mobile && (
                   <p className="text-xs text-red-500">
                     {loginForm.formState.errors.mobile.message}
@@ -207,7 +223,9 @@ export function TripShareShell() {
             className="flex size-10 items-center justify-center overflow-hidden rounded-full border border-[#BFC8C8] bg-[#D3E4FE]"
           >
             <span className="text-sm font-semibold text-[#0B1C30]">
-              {initials(authUser.name || authUser.username || authUser.email)}
+              {initials(
+                authUser.name || authUser.username || authUser.email || authUser.phone || "U",
+              )}
             </span>
           </button>
         </div>

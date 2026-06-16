@@ -28,6 +28,7 @@ export function LoginCard() {
     onSuccess: (data) => {
       setAuth({
         accessToken: data.access_token,
+        refreshToken: data.refresh_token,
         user: data.user,
       });
     },

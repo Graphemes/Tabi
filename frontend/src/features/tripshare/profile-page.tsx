@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Camera, Loader2, LogOut, Trash2 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
-import { getProfile, updateProfile, changePassword, deleteAccount } from "@/features/whatsapp/api";
+import { getProfile, updateProfile, deleteAccount, logout } from "@/features/whatsapp/api";
 
 function initials(name: string) {
   return name
@@ -26,11 +26,6 @@ type ProfileForm = {
   phone: string;
 };
 
-type PasswordForm = {
-  currentPassword: string;
-  newPassword: string;
-};
-
 export function ProfilePage({ onBack }: Props) {
   const queryClient = useQueryClient();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -43,16 +38,12 @@ export function ProfilePage({ onBack }: Props) {
     email: "",
     phone: "",
   });
-  const [passwordForm, setPasswordForm] = useState<PasswordForm>({
-    currentPassword: "",
-    newPassword: "",
-  });
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const profileQuery = useQuery({
-    queryKey: ["profile"],
+    queryKey: ["profile", authUser?.id],
     queryFn: getProfile,
+    enabled: Boolean(authUser?.id),
   });
 
   useEffect(() => {
@@ -73,11 +64,12 @@ export function ProfilePage({ onBack }: Props) {
       if (authUser) {
         setAuth({
           accessToken: useAuthStore.getState().accessToken!,
+          refreshToken: useAuthStore.getState().refreshToken!,
           user: {
             ...authUser,
-            name: data.name || authUser.name,
-            username: data.username,
-            email: data.email,
+            name: data.name || authUser.name || null,
+            username: data.username || null,
+            email: data.email || null,
             phone: data.phone || authUser.phone,
           },
         });
@@ -85,11 +77,10 @@ export function ProfilePage({ onBack }: Props) {
     },
   });
 
-  const changePasswordMutation = useMutation({
-    mutationFn: changePassword,
+  const logoutMutation = useMutation({
+    mutationFn: logout,
     onSuccess: () => {
-      setPasswordForm({ currentPassword: "", newPassword: "" });
-      setShowPasswordForm(false);
+      clearAuth();
     },
   });
 
@@ -106,7 +97,8 @@ export function ProfilePage({ onBack }: Props) {
     form.email !== (profileQuery.data?.email || "") ||
     form.phone !== (profileQuery.data?.phone || "");
 
-  const displayName = form.name || profileQuery.data?.username || "User";
+  const displayName =
+    form.name || profileQuery.data?.username || profileQuery.data?.phone || "User";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -132,7 +124,9 @@ export function ProfilePage({ onBack }: Props) {
             </div>
           </div>
           <h2 className="text-xl font-bold text-[#0B1C30]">{displayName}</h2>
-          <p className="-mt-1 text-sm text-[#6B7280]">@{profileQuery.data?.username}</p>
+          <p className="-mt-1 text-sm text-[#6B7280]">
+            {profileQuery.data?.username ? `@${profileQuery.data.username}` : ""}
+          </p>
         </div>
 
         <div className="space-y-4">
@@ -200,82 +194,19 @@ export function ProfilePage({ onBack }: Props) {
         </button>
 
         <div className="space-y-3">
-          {!showPasswordForm ? (
-            <button
-              type="button"
-              onClick={() => setShowPasswordForm(true)}
-              className="w-full rounded-xl border border-[#E2E8F0] bg-white py-3.5 text-sm font-semibold text-[#003535] transition hover:bg-[#F1F4F9]"
-            >
-              Change Password
-            </button>
-          ) : (
-            <div className="space-y-3 rounded-xl border border-[#E2E8F0] bg-white p-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">
-                  CURRENT PASSWORD
-                </label>
-                <input
-                  type="password"
-                  value={passwordForm.currentPassword}
-                  onChange={(e) =>
-                    setPasswordForm((p) => ({ ...p, currentPassword: e.target.value }))
-                  }
-                  placeholder="Current password"
-                  className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">
-                  NEW PASSWORD
-                </label>
-                <input
-                  type="password"
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm((p) => ({ ...p, newPassword: e.target.value }))}
-                  placeholder="New password (min 6 chars)"
-                  className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-                />
-              </div>
-
-              {changePasswordMutation.isError && (
-                <p className="text-sm text-red-500">
-                  {changePasswordMutation.error?.message || "Could not change password"}
-                </p>
-              )}
-              {changePasswordMutation.isSuccess && (
-                <p className="text-sm text-emerald-600">Password changed</p>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordForm(false);
-                    setPasswordForm({ currentPassword: "", newPassword: "" });
-                  }}
-                  className="flex-1 rounded-xl border border-[#E2E8F0] py-3 text-sm font-semibold text-[#404848] transition hover:bg-[#F1F4F9]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={
-                    !passwordForm.currentPassword ||
-                    !passwordForm.newPassword ||
-                    changePasswordMutation.isPending
-                  }
-                  onClick={() => changePasswordMutation.mutate(passwordForm)}
-                  className="flex-1 rounded-xl bg-[#003535] py-3 text-sm font-semibold text-white transition hover:bg-[#002828] disabled:opacity-50"
-                >
-                  {changePasswordMutation.isPending ? (
-                    <Loader2 className="mx-auto size-4 animate-spin" />
-                  ) : (
-                    "Update"
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => logoutMutation.mutate()}
+            disabled={logoutMutation.isPending}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] bg-white py-3.5 text-sm font-semibold text-[#003535] transition hover:bg-[#F1F4F9]"
+          >
+            {logoutMutation.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogOut className="size-4" />
+            )}
+            Logout
+          </button>
 
           {!deleteConfirm ? (
             <button

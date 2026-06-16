@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -25,6 +26,11 @@ export class UsersController {
   @Patch('profile')
   updateProfile(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.userId, dto);
+  }
+
+  @Get()
+  listUsers(@Query('query') query?: string) {
+    return this.usersService.listUsers(query);
   }
 
   @Delete('account')

@@ -12,6 +12,30 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   constructor(private prisma: PrismaService, private jwtService: JwtService) {}
 
+  private async generateTokens(userId: number) {
+    const accessToken = this.jwtService.sign(
+      { sub: userId },
+      { expiresIn: '15m' },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, type: 'refresh' },
+      {
+        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+        expiresIn: '24h',
+      },
+    );
+
+    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash },
+    });
+
+    return { access_token: accessToken, refresh_token: refreshToken };
+  }
+
   async signup(email: string, password: string, username: string) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -23,17 +47,15 @@ export class AuthService {
       },
     });
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-    });
+    const tokens = await this.generateTokens(user.id);
 
     return {
-      access_token: token,
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
         username: user.username,
+        name: user.name,
       },
     };
   }
@@ -52,40 +74,27 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-    });
+    const tokens = await this.generateTokens(user.id);
 
     return {
-      access_token: token,
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
         username: user.username,
+        name: user.name,
       },
     };
   }
 
   async loginWithMobile(mobile: string, name: string) {
     const normalizedMobile = mobile.replace(/\s+/g, '');
-    const syntheticEmail = `${normalizedMobile}@tabi.mobile`;
 
-    let user = await this.prisma.user.findUnique({
-      where: { email: syntheticEmail },
+    let user = await this.prisma.user.findFirst({
+      where: { phone: normalizedMobile },
     });
 
     if (!user) {
-      const baseUsername = name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '')
-        .slice(0, 24);
-
-      const username = `${baseUsername || 'user'}-${normalizedMobile.slice(
-        -4,
-      )}`;
       const randomPassword = await bcrypt.hash(
         `mobile:${normalizedMobile}`,
         10,
@@ -93,24 +102,22 @@ export class AuthService {
 
       user = await this.prisma.user.create({
         data: {
-          email: syntheticEmail,
-          username,
+          phone: normalizedMobile,
           password: randomPassword,
+          name: name || undefined,
         },
       });
     }
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      email: user.email,
-    });
+    const tokens = await this.generateTokens(user.id);
 
     return {
-      access_token: token,
+      ...tokens,
       user: {
         id: user.id,
         email: user.email,
         username: user.username,
+        name: user.name,
       },
       mobile: normalizedMobile,
       name,
@@ -142,5 +149,43 @@ export class AuthService {
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  async refresh(refreshToken: string) {
+    try {
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+      });
+
+      if (payload.type !== 'refresh') {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
+
+      if (!user || !user.refreshTokenHash) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const isValid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      return this.generateTokens(user.id);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+  }
+
+  async logout(userId: number) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshTokenHash: null },
+    });
+    return { message: 'Logged out successfully' };
   }
 }
