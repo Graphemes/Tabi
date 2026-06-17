@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MapPin, Send, Loader2, MessageCircle } from "lucide-react";
+import { ArrowLeft, MapPin, Send, Loader2, MessageCircle, Plus, X, Camera, Image, Receipt } from "lucide-react";
 import { getMessages, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
 import { useAuthStore } from "@/store/auth-store";
 import { getSocket } from "@/lib/socket";
@@ -17,13 +17,27 @@ function formatClock(iso: string) {
 type Props = {
   group: ApiGroup | null;
   onBack: () => void;
+  onAddExpense?: () => void;
 };
 
-export function ChatView({ group, onBack }: Props) {
+export function ChatView({ group, onBack, onAddExpense }: Props) {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
   const authUser = useAuthStore((s) => s.user);
   const [text, setText] = useState("");
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMenu]);
 
   const messagesQuery = useQuery({
     queryKey: ["groups", group?.id, "messages"],
@@ -135,25 +149,73 @@ export function ChatView({ group, onBack }: Props) {
         )}
       </div>
 
-      <footer className="flex items-end gap-2 border-t border-[#E2E8F0] bg-white p-3">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleSend();
-          }}
-          placeholder="Type a message..."
-          className="min-h-[44px] flex-1 resize-none rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-2.5 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!text.trim()}
-          className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#003535] text-white disabled:opacity-40"
-        >
-          <Send className="size-4" />
-        </button>
-      </footer>
+      <div ref={menuRef} className="relative">
+        {showMenu && (
+          <div className="absolute bottom-full left-0 mb-2 ml-2 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-xl">
+            <button
+              type="button"
+              onClick={() => { setShowMenu(false); }}
+              className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+            >
+              <Camera className="size-5 text-[#404848]" />
+              Camera
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowMenu(false); }}
+              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+            >
+              <Image className="size-5 text-[#404848]" />
+              Gallery
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowMenu(false); }}
+              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+            >
+              <MapPin className="size-5 text-[#404848]" />
+              Location
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowMenu(false);
+                onAddExpense?.();
+              }}
+              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+            >
+              <Receipt className="size-5 text-[#404848]" />
+              Expense
+            </button>
+          </div>
+        )}
+        <footer className="flex items-end gap-2 border-t border-[#E2E8F0] bg-white p-3">
+          <button
+            type="button"
+            onClick={() => setShowMenu((v) => !v)}
+            className="flex size-[39px] shrink-0 items-center justify-center rounded-full bg-[#E5EEFF] text-[#404848] transition hover:bg-[#DCE9FF]"
+          >
+            {showMenu ? <X className="size-5" /> : <Plus className="size-5" />}
+          </button>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSend();
+            }}
+            placeholder="Type a message..."
+            className="min-h-[40px] flex-1 resize-none rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-2.5 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!text.trim()}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#003535] text-white disabled:opacity-40"
+          >
+            <Send className="size-4" />
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import { MapView } from "./map-view";
 import { ChatView } from "./chat-view";
 import { CreateNewGroup } from "./create-new-group";
 import { ProfilePage } from "./profile-page";
+import { AddExpense } from "./add-expense";
 
 const TABS: { id: TabId; label: string; icon: typeof LayoutGrid }[] = [
   { id: "groups", label: "Groups", icon: LayoutGrid },
@@ -53,7 +54,7 @@ export function TripShareShell() {
 
   const [activeTab, setActiveTab] = useState<TabId>("groups");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
-  const [activeOverlay, setActiveOverlay] = useState<"create-group" | "profile" | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<"create-group" | "profile" | "add-expense" | null>(null);
   const [loginStep, setLoginStep] = useState<"phone" | "otp">("phone");
   const [pendingPhone, setPendingPhone] = useState("");
   const [otpValue, setOtpValue] = useState("");
@@ -234,6 +235,8 @@ export function TripShareShell() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {activeOverlay === "create-group" ? (
           <CreateNewGroup onBack={() => setActiveOverlay(null)} />
+        ) : activeOverlay === "add-expense" && selectedGroup ? (
+          <AddExpense group={selectedGroup} onBack={() => setActiveOverlay(null)} />
         ) : activeOverlay === "profile" ? (
           <ProfilePage onBack={() => setActiveOverlay(null)} />
         ) : activeTab === "chat" && selectedGroup ? (
@@ -243,6 +246,7 @@ export function TripShareShell() {
               setSelectedGroupId(null);
               setActiveTab("groups");
             }}
+            onAddExpense={() => setActiveOverlay("add-expense")}
           />
         ) : activeTab === "chat" ? (
           <ChatView group={null} onBack={() => {}} />
