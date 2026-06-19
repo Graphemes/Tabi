@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Image as ImageIcon, CalendarDays, Tag, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, Tag, ChevronDown, Camera, FileText, Check, Plus } from "lucide-react";
 import { http } from "@/lib/http";
 import { useAuthStore } from "@/store/auth-store";
 import type { ApiGroup } from "@/features/whatsapp/api";
+
+type SplitMode = "EQUAL" | "PERCENTAGE" | "EXACT";
 
 type Props = {
   group: ApiGroup;
@@ -18,18 +20,47 @@ export function AddExpense({ group, onBack }: Props) {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [selectedPayerId, setSelectedPayerId] = useState<number>(authUser?.id ?? 0);
+  const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
+  const [memberValues, setMemberValues] = useState<Record<number, string>>({});
+  const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set());
 
   const today = new Date().toISOString().split("T")[0];
+
+  const members = group.members;
+  const includedMembers = useMemo(
+    () => members.filter((m) => !excludedIds.has(m.userId)),
+    [members, excludedIds],
+  );
+
+  const totalAmount = parseFloat(amount) || 0;
+
+  const equalShare = includedMembers.length > 0
+    ? (totalAmount / includedMembers.length).toFixed(2)
+    : "0.00";
+
+  const percentTotal = useMemo(() => {
+    if (splitMode !== "PERCENTAGE") return 0;
+    return includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0);
+  }, [splitMode, includedMembers, memberValues]);
+
+  const exactTotal = useMemo(() => {
+    if (splitMode !== "EXACT") return 0;
+    return includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0);
+  }, [splitMode, includedMembers, memberValues]);
 
   const createExpenseMutation = useMutation({
     mutationFn: () =>
       http.post(`/groups/${group.id}/expenses`, {
         title,
-        totalAmount: parseFloat(amount) || 0,
+        totalAmount,
         currency: group.defaultCurrency || "USD",
-        splitType: "EQUAL" as const,
-        paidBy: [{ userId: selectedPayerId, amount: parseFloat(amount) || 0 }],
-        participants: group.members.map((m) => ({ userId: m.userId })),
+        splitType: splitMode,
+        paidBy: [{ userId: selectedPayerId, amount: totalAmount }],
+        participants: includedMembers.map((m) => ({
+          userId: m.userId,
+          ...(splitMode === "EXACT" ? { exactAmount: parseFloat(memberValues[m.userId]) || 0 } : {}),
+          ...(splitMode === "PERCENTAGE" ? { percentage: parseFloat(memberValues[m.userId]) || 0 } : {}),
+        })),
         expenseDate: today,
       }),
     onSuccess: () => {
@@ -38,7 +69,56 @@ export function AddExpense({ group, onBack }: Props) {
     },
   });
 
-  const otherMembers = group.members.filter((m) => m.userId !== authUser?.id);
+  const otherMembers = members.filter((m) => m.userId !== authUser?.id);
+
+  const handleMemberValue = (userId: number, val: string) => {
+    const cleaned = val.replace(/[^0-9.]/g, "");
+    setMemberValues((prev) => ({ ...prev, [userId]: cleaned }));
+  };
+
+  const toggleExcluded = (userId: number) => {
+    setExcludedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => setExcludedIds(new Set());
+  const deselectAll = () => setExcludedIds(new Set(members.map((m) => m.userId)));
+
+  const tabsForMode: Record<SplitMode, { label: string; mode: SplitMode }[]> = {
+    EQUAL: [
+      { label: "Equal", mode: "EQUAL" },
+      { label: "%", mode: "PERCENTAGE" },
+      { label: "Adj.", mode: "EXACT" },
+    ],
+    PERCENTAGE: [
+      { label: "Equal", mode: "EQUAL" },
+      { label: "%", mode: "PERCENTAGE" },
+      { label: "Shares", mode: "EXACT" },
+    ],
+    EXACT: [
+      { label: "Equal", mode: "EQUAL" },
+      { label: "%", mode: "PERCENTAGE" },
+      { label: "Exact", mode: "EXACT" },
+    ],
+  };
+
+  const summaryText = (() => {
+    switch (splitMode) {
+      case "EQUAL":
+        return `Equal split among ${includedMembers.length} ${includedMembers.length === 1 ? "person" : "people"}`;
+      case "PERCENTAGE":
+        return "split by percentage";
+      case "EXACT":
+        return "split by exact amounts";
+    }
+  })();
 
   return (
     <div className="flex flex-1 flex-col bg-[#F8F9FF]">
@@ -51,7 +131,7 @@ export function AddExpense({ group, onBack }: Props) {
         </div>
         <button
           type="button"
-          disabled={!title.trim() || !amount || parseFloat(amount) <= 0 || createExpenseMutation.isPending}
+          disabled={!title.trim() || totalAmount <= 0 || createExpenseMutation.isPending}
           onClick={() => createExpenseMutation.mutate()}
           className="rounded-full bg-[#FE6B00] px-5 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
         >
@@ -151,38 +231,74 @@ export function AddExpense({ group, onBack }: Props) {
         <div className="rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3">
             <p className="text-xs font-semibold tracking-wider text-[#6B7280]">SPLIT BY</p>
-            <span className="rounded bg-[#FE6B00]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FE6B00]">MODE: EQUAL</span>
+            <span className="rounded border border-[#FE6B00]/30 bg-[#FE6B00]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FE6B00]">
+              MODE: {splitMode}
+            </span>
           </div>
+
           <div className="flex border-b border-[#E2E8F0]">
-            {["Equal", "Exact", "%", "Shares", "Adj."].map((tab) => (
+            {tabsForMode[splitMode].map((tab) => (
               <button
-                key={tab}
+                key={tab.label}
                 type="button"
+                onClick={() => setSplitMode(tab.mode)}
                 className={`flex-1 border-b-2 py-3 text-center text-sm font-medium transition ${
-                  tab === "Equal"
+                  splitMode === tab.mode
                     ? "border-[#003535] text-[#003535]"
                     : "border-transparent text-[#6B7280] hover:text-[#0B1C30]"
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
+
+          <div className="border-b border-[#E2E8F0] px-4 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-[#0B1C30]">Split with subset</span>
+              <button
+                type="button"
+                onClick={excludedIds.size > 0 ? selectAll : deselectAll}
+                className="text-xs font-semibold text-[#FE6B00]"
+              >
+                {excludedIds.size > 0 ? "Select All" : "Deselect All"}
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-1 p-2">
-            {group.members.map((m) => {
+            {members.map((m) => {
               const isPayer = m.userId === selectedPayerId;
-              const memberAmount =
-                parseFloat(amount) && group.members.length > 0
-                  ? (parseFloat(amount) / group.members.length).toFixed(2)
-                  : "0.00";
+              const isExcluded = excludedIds.has(m.userId);
+              const isIncluded = !isExcluded;
+              const val = memberValues[m.userId] ?? "";
+
+              let displayAmount = "";
+              if (splitMode === "EQUAL" && isIncluded) {
+                displayAmount = `$${equalShare}`;
+              } else if (splitMode === "EQUAL" && isExcluded) {
+                displayAmount = "$0.00";
+              }
+
               return (
                 <div
                   key={m.userId}
                   className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${
-                    isPayer ? "bg-[#F0F7FF]" : ""
-                  }`}
+                    isPayer && isIncluded ? "bg-[#F0F7FF]" : ""
+                  } ${isExcluded ? "opacity-50" : ""}`}
                 >
                   <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleExcluded(m.userId)}
+                      className={`flex size-6 items-center justify-center rounded-full border-2 transition ${
+                        isIncluded
+                          ? "border-[#003535] bg-[#003535] text-white"
+                          : "border-[#DEE3E3] bg-white"
+                      }`}
+                    >
+                      {isIncluded && <Check className="size-3.5" />}
+                    </button>
                     <div className="flex size-8 items-center justify-center rounded-full bg-[#DEE3E3] text-xs font-bold text-[#2A3030]">
                       {(m.user.name || "U")[0]}
                     </div>
@@ -190,15 +306,97 @@ export function AddExpense({ group, onBack }: Props) {
                       <p className="text-sm font-medium text-[#0B1C30]">
                         {m.user.name || `User ${m.userId}`}
                       </p>
-                      {isPayer && <p className="text-[10px] text-[#FE6B00]">Payer</p>}
+                      {isPayer && isIncluded && (
+                        <p className="text-[10px] text-[#FE6B00]">Payer</p>
+                      )}
                     </div>
                   </div>
-                  <span className="text-sm font-medium text-[#6B7280]">${memberAmount}</span>
+
+                  <div className="flex items-center gap-2">
+                    {splitMode === "EQUAL" ? (
+                      <span className="text-sm font-medium text-[#6B7280]">
+                        {isExcluded ? "$0.00 (Excluded)" : displayAmount}
+                      </span>
+                    ) : splitMode === "PERCENTAGE" ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={val}
+                          onChange={(e) => handleMemberValue(m.userId, e.target.value)}
+                          placeholder={isIncluded ? "0" : "-"}
+                          disabled={isExcluded}
+                          className="w-16 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                        />
+                        <span className="text-sm text-[#6B7280]">%</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-[#6B7280]">$</span>
+                        <input
+                          value={val}
+                          onChange={(e) => handleMemberValue(m.userId, e.target.value)}
+                          placeholder={isIncluded ? "0.00" : "-"}
+                          disabled={isExcluded}
+                          className="w-20 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+
+          {splitMode === "PERCENTAGE" && includedMembers.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+              <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
+              <span className={`text-sm font-medium ${percentTotal === 100 ? "text-[#003535]" : "text-red-500"}`}>
+                {percentTotal.toFixed(0)}%
+              </span>
+            </div>
+          )}
+
+          {splitMode === "EXACT" && includedMembers.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+              <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
+              <span className={`text-sm font-medium ${Math.abs(exactTotal - totalAmount) < 0.01 ? "text-[#003535]" : "text-red-500"}`}>
+                ${exactTotal.toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
+
+        {includedMembers.length > 0 && (
+          <div className="rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold tracking-wider text-[#6B7280]/80">
+                    SPLITTING SUMMARY
+                  </span>
+                  <span className="rounded-full bg-[#003535]/10 px-2.5 py-0.5 text-[10px] font-semibold text-[#003535]">
+                    BALANCED
+                  </span>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#0B1C30]">
+                    {includedMembers.length} {includedMembers.length === 1 ? "Person" : "People"}
+                  </p>
+                  <p className="text-xs text-[#6B7280]">{summaryText}</p>
+                </div>
+                {totalAmount > 0 && (
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-[#003535]">
+                      ${splitMode === "EQUAL" ? equalShare : (totalAmount / includedMembers.length).toFixed(2)}
+                    </p>
+                    <p className="text-[10px] font-semibold tracking-wider text-[#6B7280]/80">EACH</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -212,25 +410,9 @@ export function AddExpense({ group, onBack }: Props) {
             type="button"
             className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E2E8F0] bg-white py-4 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
           >
-            <ImageIcon className="size-4" />
+            <FileText className="size-4" />
             Add Note
           </button>
-        </div>
-      </div>
-
-      <div className="fixed bottom-24 left-1/2 mx-auto w-full max-w-[430px] -translate-x-1/2 px-4">
-        <div className="flex items-center justify-between rounded-xl border border-[#E2E8F0] bg-[#003535] px-5 py-4 shadow-lg">
-          <div>
-            <p className="text-[10px] font-semibold tracking-wider text-white/70">SPLITTING SUMMARY</p>
-            <p className="text-sm font-medium text-white">
-              {group.members.length} people · $
-              {parseFloat(amount) && group.members.length > 0
-                ? (parseFloat(amount) / group.members.length).toFixed(2)
-                : "0.00"}{" "}
-              each
-            </p>
-          </div>
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">Balanced</span>
         </div>
       </div>
 

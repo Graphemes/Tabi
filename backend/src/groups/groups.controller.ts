@@ -14,6 +14,7 @@ import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
+import { UpdateMemberStatusDto } from './dto/update-member-status.dto';
 import { AuthUser } from '../common/interfaces/auth-user.interface';
 
 @Controller('groups')
@@ -52,6 +53,19 @@ export class GroupsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.groupsService.addMember(Number(id), dto, user.userId);
+  }
+
+  @Patch(':id/members/status')
+  updateMemberStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateMemberStatusDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.groupsService.updateMemberStatus(
+      Number(id),
+      user.userId,
+      dto.status,
+    );
   }
 
   @Delete(':id/members/:userId')

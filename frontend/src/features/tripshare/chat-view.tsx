@@ -170,7 +170,24 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => { setShowMenu(false); }}
+              onClick={() => {
+                setShowMenu(false);
+                if (!group) return;
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const socket = getSocket(accessToken);
+                    socket.emit("location:send-message", {
+                      groupId: group.id,
+                      payload: {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                      },
+                    });
+                  },
+                  (err) => console.warn("Location error:", err.message),
+                  { enableHighAccuracy: true, timeout: 10000 },
+                );
+              }}
               className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
             >
               <MapPin className="size-5 text-[#404848]" />

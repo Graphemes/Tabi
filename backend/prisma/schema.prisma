@@ -76,9 +76,10 @@ model Group {
 }
 
 model GroupMember {
-  id                     Int      @id @default(autoincrement())
-  role                   GroupRole @default(MEMBER)
-  locationSharingEnabled Boolean  @default(false)
+  id                     Int                @id @default(autoincrement())
+  role                   GroupRole          @default(MEMBER)
+  status                 GroupMemberStatus  @default(ACTIVE)
+  locationSharingEnabled Boolean            @default(false)
 
   groupId Int
   group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -301,6 +302,12 @@ enum SettlementStatus {
 enum ExpenseStatus {
   ACTIVE
   DELETED
+}
+
+enum GroupMemberStatus {
+  ACTIVE
+  PENDING
+  ARCHIVED
 }
 
 

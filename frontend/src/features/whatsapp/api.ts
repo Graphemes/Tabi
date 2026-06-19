@@ -40,6 +40,7 @@ export type ApiGroup = {
   members: Array<{
     userId: number;
     user: ApiUser;
+    status?: string;
   }>;
   updatedAt: string;
 };
@@ -125,13 +126,11 @@ export const sendMessage = async (
   return data;
 };
 
-export const sendLocationMessage = async (groupId: number) => {
-  const latitude = 28.6139;
-  const longitude = 77.209;
-  const { data } = await http.post<ApiMessage>(`/groups/${groupId}/location/message`, {
-    latitude,
-    longitude,
-  });
+export const sendLocationMessage = async (
+  groupId: number,
+  payload: { latitude: number; longitude: number },
+) => {
+  const { data } = await http.post<ApiMessage>(`/groups/${groupId}/location/message`, payload);
   return data;
 };
 
@@ -165,6 +164,14 @@ export const changePassword = async (payload: { currentPassword: string; newPass
 
 export const deleteAccount = async () => {
   const { data } = await http.delete("/users/account");
+  return data;
+};
+
+export const updateMemberStatus = async (
+  groupId: number,
+  status: 'ACTIVE' | 'PENDING' | 'ARCHIVED',
+) => {
+  const { data } = await http.patch(`/groups/${groupId}/members/status`, { status });
   return data;
 };
 

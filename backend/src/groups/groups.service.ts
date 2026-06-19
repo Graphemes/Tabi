@@ -55,6 +55,25 @@ export class GroupsService {
     });
   }
 
+  async updateMemberStatus(
+    groupId: number,
+    userId: number,
+    status: 'ACTIVE' | 'PENDING' | 'ARCHIVED',
+  ) {
+    const membership = await this.prisma.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId } },
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Membership not found');
+    }
+
+    return this.prisma.groupMember.update({
+      where: { id: membership.id },
+      data: { status },
+    });
+  }
+
   async findOne(groupId: number, userId: number) {
     await this.groupAccessService.ensureMember(groupId, userId);
 
@@ -121,7 +140,7 @@ export class GroupsService {
     }
 
     return this.prisma.groupMember.create({
-      data: { groupId, userId: dto.userId },
+      data: { groupId, userId: dto.userId, status: 'PENDING' },
       include: { user: { select: { id: true, email: true, username: true } } },
     });
   }
