@@ -439,7 +439,7 @@ export class ExpensesService {
       include: {
         participants: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
         items: {
@@ -503,12 +503,12 @@ export class ExpensesService {
       orderBy: [{ expenseDate: 'desc' }, { id: 'desc' }],
       include: {
         createdBy: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
         participants: {
           include: {
             user: {
-              select: { id: true, email: true, username: true },
+              select: { id: true, email: true, username: true, name: true, phone: true },
             },
           },
         },
@@ -526,18 +526,18 @@ export class ExpensesService {
       },
       include: {
         createdBy: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
         participants: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
         items: {
           include: {
             participants: {
               include: {
-                user: { select: { id: true, email: true, username: true } },
+                user: { select: { id: true, email: true, username: true, name: true, phone: true } },
               },
             },
           },
@@ -594,7 +594,7 @@ export class ExpensesService {
       include: {
         participants: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
       },
@@ -701,7 +701,7 @@ export class ExpensesService {
       where: { groupId },
       include: {
         user: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });
@@ -824,10 +824,10 @@ export class ExpensesService {
       },
       include: {
         payer: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });
@@ -855,10 +855,10 @@ export class ExpensesService {
       orderBy: { settledAt: 'desc' },
       include: {
         payer: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
         receiver: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });

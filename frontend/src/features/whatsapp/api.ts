@@ -180,6 +180,16 @@ export const logout = async () => {
   return data;
 };
 
+export const listGroupExpenses = async (groupId: number) => {
+  const { data } = await http.get(`/groups/${groupId}/expenses`);
+  return data;
+};
+
+export const getGroupBalances = async (groupId: number) => {
+  const { data } = await http.get(`/groups/${groupId}/balances`);
+  return data;
+};
+
 export const createExpense = async (
   group: ApiGroup,
   userId: number,

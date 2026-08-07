@@ -51,6 +51,7 @@ export function TripShareShell() {
   const authUser = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const hasHydrated = useAuthStore((s) => s.hasHydrated);
 
   const [activeTab, setActiveTab] = useState<TabId>("groups");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
@@ -92,6 +93,17 @@ export function TripShareShell() {
     () => groups.find((g) => g.id === selectedGroupId) ?? null,
     [groups, selectedGroupId],
   );
+
+  if (!hasHydrated) {
+    // Matches the server-rendered output (auth state is unknown until the
+    // client reads localStorage post-mount) so the first client paint
+    // doesn't diverge from the SSR-ed HTML — see store/auth-store.ts.
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F8F9FF]">
+        <Loader2 className="size-6 animate-spin text-[#6B7280]" />
+      </div>
+    );
+  }
 
   if (!accessToken || !authUser) {
     if (loginStep === "otp") {
@@ -260,7 +272,7 @@ export function TripShareShell() {
             onFabClick={() => setActiveOverlay("create-group")}
           />
         ) : activeTab === "expenses" ? (
-          <ExpensesView />
+          <ExpensesView groups={groups} onSelectGroup={(id) => { setSelectedGroupId(id); setActiveTab("chat"); }} />
         ) : (
           <MapView />
         )}

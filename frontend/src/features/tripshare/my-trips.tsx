@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, MapPin, Users, Plus, Archive, RotateCcw } from "lucide-react";
 import { ApiGroup, updateMemberStatus } from "@/features/whatsapp/api";
 import { useAuthStore } from "@/store/auth-store";
@@ -37,8 +38,17 @@ type Props = {
 
 export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
   const authUser = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterChip>("All Trips");
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ groupId, status }: { groupId: number; status: "ACTIVE" | "ARCHIVED" }) =>
+      updateMemberStatus(groupId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+    },
+  });
 
   const filtered = useMemo(() => {
     let result = groups;
@@ -145,7 +155,7 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
               {!isArchived ? (
                 <button
                   type="button"
-                  onClick={() => updateMemberStatus(group.id, "ARCHIVED")}
+                  onClick={() => updateStatusMutation.mutate({ groupId: group.id, status: "ARCHIVED" })}
                   className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-white/80 text-[#6B7280] opacity-0 transition hover:bg-[#FEE2E2] hover:text-red-500 group-hover:opacity-100"
                   title="Archive"
                 >
@@ -154,7 +164,7 @@ export function MyTrips({ groups, onSelectGroup, onFabClick }: Props) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => updateMemberStatus(group.id, "ACTIVE")}
+                  onClick={() => updateStatusMutation.mutate({ groupId: group.id, status: "ACTIVE" })}
                   className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-white/80 text-[#6B7280] opacity-0 transition hover:bg-[#DCE9FF] hover:text-[#003535] group-hover:opacity-100"
                   title="Unarchive"
                 >

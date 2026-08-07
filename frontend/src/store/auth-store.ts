@@ -13,6 +13,8 @@ type AuthState = {
   accessToken: string | null;
   refreshToken: string | null;
   user: User | null;
+  hasHydrated: boolean;
+  hydrate: () => void;
   setAuth: (payload: { accessToken: string; refreshToken: string; user: User }) => void;
   clearAuth: () => void;
 };
@@ -22,10 +24,6 @@ const REFRESH_TOKEN_KEY = "tabi.refreshToken";
 const USER_KEY = "tabi.user";
 
 const readUser = () => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
   const raw = window.localStorage.getItem(USER_KEY);
   if (!raw) {
     return null;
@@ -39,10 +37,29 @@ const readUser = () => {
   }
 };
 
+// accessToken/refreshToken/user always start `null` here (matching what the
+// server renders) so the very first client render matches the SSR-ed HTML.
+// The real values are loaded from localStorage in `hydrate()`, called from a
+// `useEffect` after mount — see AppProviders. Reading localStorage directly
+// during store creation would make the client's first paint diverge from
+// the server's and trigger a full-tree hydration mismatch/remount.
 export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: typeof window !== "undefined" ? window.localStorage.getItem(TOKEN_KEY) : null,
-  refreshToken: typeof window !== "undefined" ? window.localStorage.getItem(REFRESH_TOKEN_KEY) : null,
-  user: readUser(),
+  accessToken: null,
+  refreshToken: null,
+  user: null,
+  hasHydrated: false,
+  hydrate: () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    set({
+      accessToken: window.localStorage.getItem(TOKEN_KEY),
+      refreshToken: window.localStorage.getItem(REFRESH_TOKEN_KEY),
+      user: readUser(),
+      hasHydrated: true,
+    });
+  },
   setAuth: ({ accessToken, refreshToken, user }) => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(TOKEN_KEY, accessToken);
@@ -50,7 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       window.localStorage.setItem(USER_KEY, JSON.stringify(user));
     }
 
-    set({ accessToken, refreshToken, user });
+    set({ accessToken, refreshToken, user, hasHydrated: true });
   },
   clearAuth: () => {
     if (typeof window !== "undefined") {
@@ -59,6 +76,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       window.localStorage.removeItem(USER_KEY);
     }
 
-    set({ accessToken: null, refreshToken: null, user: null });
+    set({ accessToken: null, refreshToken: null, user: null, hasHydrated: true });
   },
 }));

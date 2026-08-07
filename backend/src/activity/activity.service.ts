@@ -34,7 +34,7 @@ export class ActivityService {
       orderBy: { createdAt: 'desc' },
       include: {
         actor: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });

@@ -186,7 +186,14 @@ export function ProfilePage({ onBack }: Props) {
         <button
           type="button"
           disabled={!hasChanges || updateMutation.isPending}
-          onClick={() => updateMutation.mutate(form)}
+          onClick={() =>
+            updateMutation.mutate({
+              name: form.name.trim() || undefined,
+              username: form.username.trim() || undefined,
+              email: form.email.trim() || undefined,
+              phone: form.phone.trim() || undefined,
+            })
+          }
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#003535] py-3.5 text-sm font-semibold text-white transition hover:bg-[#002828] disabled:opacity-50"
         >
           {updateMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}

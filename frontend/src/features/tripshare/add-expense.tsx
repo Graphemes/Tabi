@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, Tag, ChevronDown, Camera, FileText, Check, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, Tag, ChevronDown, Camera, Check } from "lucide-react";
 import { http } from "@/lib/http";
 import { useAuthStore } from "@/store/auth-store";
 import type { ApiGroup } from "@/features/whatsapp/api";
@@ -23,8 +23,12 @@ export function AddExpense({ group, onBack }: Props) {
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
   const [memberValues, setMemberValues] = useState<Record<number, string>>({});
   const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set());
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [category, setCategory] = useState("General");
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const today = new Date().toISOString().split("T")[0];
+  const categories = ["General", "Food & Drink", "Transportation", "Accommodation", "Shopping", "Entertainment", "Utilities", "Healthcare"];
 
   const members = group.members;
   const includedMembers = useMemo(
@@ -48,20 +52,32 @@ export function AddExpense({ group, onBack }: Props) {
     return includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0);
   }, [splitMode, includedMembers, memberValues]);
 
+  const categoryMap: Record<string, string> = {
+    General: "OTHER",
+    "Food & Drink": "FOOD_AND_DRINK",
+    Transportation: "TRANSPORTATION",
+    Accommodation: "ACCOMMODATION",
+    Shopping: "SHOPPING",
+    Entertainment: "ENTERTAINMENT",
+    Utilities: "UTILITIES",
+    Healthcare: "HEALTHCARE",
+  };
+
   const createExpenseMutation = useMutation({
     mutationFn: () =>
       http.post(`/groups/${group.id}/expenses`, {
         title,
         totalAmount,
         currency: group.defaultCurrency || "USD",
-        splitType: splitMode,
+        splitType: splitMode === "EXACT" ? "UNEQUAL" : splitMode,
+        category: categoryMap[category] || "OTHER",
         paidBy: [{ userId: selectedPayerId, amount: totalAmount }],
         participants: includedMembers.map((m) => ({
           userId: m.userId,
           ...(splitMode === "EXACT" ? { exactAmount: parseFloat(memberValues[m.userId]) || 0 } : {}),
           ...(splitMode === "PERCENTAGE" ? { percentage: parseFloat(memberValues[m.userId]) || 0 } : {}),
         })),
-        expenseDate: today,
+        expenseDate: new Date(expenseDate).toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups", group.id, "expenses"] });
@@ -109,17 +125,6 @@ export function AddExpense({ group, onBack }: Props) {
     ],
   };
 
-  const summaryText = (() => {
-    switch (splitMode) {
-      case "EQUAL":
-        return `Equal split among ${includedMembers.length} ${includedMembers.length === 1 ? "person" : "people"}`;
-      case "PERCENTAGE":
-        return "split by percentage";
-      case "EXACT":
-        return "split by exact amounts";
-    }
-  })();
-
   return (
     <div className="flex flex-1 flex-col bg-[#F8F9FF]">
       <header className="flex items-center justify-between border-b border-[#E2E8F0] bg-white px-4 py-3">
@@ -165,20 +170,43 @@ export function AddExpense({ group, onBack }: Props) {
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-3">
                 <CalendarDays className="size-5 text-[#404848]" />
-                <span className="text-sm text-[#0B1C30]">{today}</span>
+                <input
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  className="text-sm text-[#0B1C30] bg-transparent border-none focus:outline-none [color-scheme:light]"
+                />
               </div>
               <ChevronDown className="size-4 text-[#404848]" />
             </div>
           </div>
 
-          <div className="border-t border-[#E2E8F0]">
-            <div className="flex items-center justify-between px-4 py-3">
+          <div className="border-t border-[#E2E8F0] relative">
+            <button
+              type="button"
+              onClick={() => setShowCategoryPicker(!showCategoryPicker)}
+              className="flex w-full items-center justify-between px-4 py-3"
+            >
               <div className="flex items-center gap-3">
                 <Tag className="size-5 text-[#404848]" />
-                <span className="text-sm text-[#0B1C30]">General</span>
+                <span className="text-sm text-[#0B1C30]">{category}</span>
               </div>
               <ChevronDown className="size-4 text-[#404848]" />
-            </div>
+            </button>
+            {showCategoryPicker && (
+              <div className="absolute left-0 right-0 top-full z-10 mx-4 rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => { setCategory(c); setShowCategoryPicker(false); }}
+                    className={"w-full px-4 py-2.5 text-left text-sm transition first:rounded-t-lg last:rounded-b-lg hover:bg-[#F8F9FF] " + (category === c ? "font-semibold text-[#003535]" : "text-[#0B1C30]")}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -189,11 +217,9 @@ export function AddExpense({ group, onBack }: Props) {
               <button
                 type="button"
                 onClick={() => setSelectedPayerId(authUser.id)}
-                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                  selectedPayerId === authUser.id
-                    ? "border-[#003535] bg-[#003535] text-white"
-                    : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]"
-                }`}
+                className={"flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (selectedPayerId === authUser.id
+                  ? "border-[#003535] bg-[#003535] text-white"
+                  : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")}
               >
                 <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
                   {authUser.name?.[0] || "U"}
@@ -206,11 +232,9 @@ export function AddExpense({ group, onBack }: Props) {
                 key={m.userId}
                 type="button"
                 onClick={() => setSelectedPayerId(m.userId)}
-                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
-                  selectedPayerId === m.userId
-                    ? "border-[#003535] bg-[#003535] text-white"
-                    : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]"
-                }`}
+                className={"flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (selectedPayerId === m.userId
+                  ? "border-[#003535] bg-[#003535] text-white"
+                  : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")}
               >
                 <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
                   {(m.user.name || "U")[0]}
@@ -218,13 +242,6 @@ export function AddExpense({ group, onBack }: Props) {
                 {m.user.name || `User ${m.userId}`}
               </button>
             ))}
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-full border border-dashed border-[#E2E8F0] bg-white px-4 py-2 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
-            >
-              <Plus className="size-4" />
-              Multiple
-            </button>
           </div>
         </div>
 
@@ -242,11 +259,9 @@ export function AddExpense({ group, onBack }: Props) {
                 key={tab.label}
                 type="button"
                 onClick={() => setSplitMode(tab.mode)}
-                className={`flex-1 border-b-2 py-3 text-center text-sm font-medium transition ${
-                  splitMode === tab.mode
-                    ? "border-[#003535] text-[#003535]"
-                    : "border-transparent text-[#6B7280] hover:text-[#0B1C30]"
-                }`}
+                className={"flex-1 border-b-2 py-3 text-center text-sm font-medium transition " + (splitMode === tab.mode
+                  ? "border-[#003535] text-[#003535]"
+                  : "border-transparent text-[#6B7280] hover:text-[#0B1C30]")}
               >
                 {tab.label}
               </button>
@@ -283,19 +298,15 @@ export function AddExpense({ group, onBack }: Props) {
               return (
                 <div
                   key={m.userId}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${
-                    isPayer && isIncluded ? "bg-[#F0F7FF]" : ""
-                  } ${isExcluded ? "opacity-50" : ""}`}
+                  className={"flex items-center justify-between rounded-lg px-3 py-2.5 " + (isPayer && isIncluded ? "bg-[#F0F7FF]" : "") + (isExcluded ? " opacity-50" : "")}
                 >
                   <div className="flex items-center gap-2.5">
                     <button
                       type="button"
                       onClick={() => toggleExcluded(m.userId)}
-                      className={`flex size-6 items-center justify-center rounded-full border-2 transition ${
-                        isIncluded
-                          ? "border-[#003535] bg-[#003535] text-white"
-                          : "border-[#DEE3E3] bg-white"
-                      }`}
+                      className={"flex size-6 items-center justify-center rounded-full border-2 transition " + (isIncluded
+                        ? "border-[#003535] bg-[#003535] text-white"
+                        : "border-[#DEE3E3] bg-white")}
                     >
                       {isIncluded && <Check className="size-3.5" />}
                     </button>
@@ -349,7 +360,7 @@ export function AddExpense({ group, onBack }: Props) {
           {splitMode === "PERCENTAGE" && includedMembers.length > 0 && (
             <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
               <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
-              <span className={`text-sm font-medium ${percentTotal === 100 ? "text-[#003535]" : "text-red-500"}`}>
+              <span className={"text-sm font-medium " + (percentTotal === 100 ? "text-[#003535]" : "text-red-500")}>
                 {percentTotal.toFixed(0)}%
               </span>
             </div>
@@ -358,62 +369,30 @@ export function AddExpense({ group, onBack }: Props) {
           {splitMode === "EXACT" && includedMembers.length > 0 && (
             <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
               <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
-              <span className={`text-sm font-medium ${Math.abs(exactTotal - totalAmount) < 0.01 ? "text-[#003535]" : "text-red-500"}`}>
+              <span className={"text-sm font-medium " + (Math.abs(exactTotal - totalAmount) < 0.01 ? "text-[#003535]" : "text-red-500")}>
                 ${exactTotal.toFixed(2)}
               </span>
             </div>
           )}
         </div>
 
-        {includedMembers.length > 0 && (
-          <div className="rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
-            <div className="px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold tracking-wider text-[#6B7280]/80">
-                    SPLITTING SUMMARY
-                  </span>
-                  <span className="rounded-full bg-[#003535]/10 px-2.5 py-0.5 text-[10px] font-semibold text-[#003535]">
-                    BALANCED
-                  </span>
-                </div>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#0B1C30]">
-                    {includedMembers.length} {includedMembers.length === 1 ? "Person" : "People"}
-                  </p>
-                  <p className="text-xs text-[#6B7280]">{summaryText}</p>
-                </div>
-                {totalAmount > 0 && (
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-[#003535]">
-                      ${splitMode === "EQUAL" ? equalShare : (totalAmount / includedMembers.length).toFixed(2)}
-                    </p>
-                    <p className="text-[10px] font-semibold tracking-wider text-[#6B7280]/80">EACH</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E2E8F0] bg-white py-4 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
-          >
-            <Camera className="size-4" />
-            Attach Receipt
-          </button>
-          <button
-            type="button"
-            className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E2E8F0] bg-white py-4 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
-          >
-            <FileText className="size-4" />
-            Add Note
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E2E8F0] bg-white py-4 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
+        >
+          <Camera className="size-4" />
+          Attach Receipt
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            // receipt attachment handled here
+          }}
+        />
       </div>
 
       {createExpenseMutation.isError && (

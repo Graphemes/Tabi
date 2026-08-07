@@ -31,10 +31,10 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true } },
+        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
       },
     });
   }
@@ -47,10 +47,10 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true } },
+        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
       },
     });
   }
@@ -82,10 +82,10 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true } },
+        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
       },
     });
 
@@ -114,10 +114,10 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true } },
+            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true } },
+        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
       },
     });
   }
@@ -141,7 +141,7 @@ export class GroupsService {
 
     return this.prisma.groupMember.create({
       data: { groupId, userId: dto.userId, status: 'PENDING' },
-      include: { user: { select: { id: true, email: true, username: true } } },
+      include: { user: { select: { id: true, email: true, username: true, name: true, phone: true } } },
     });
   }
 

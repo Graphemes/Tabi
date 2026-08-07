@@ -32,7 +32,7 @@ export class LocationService {
       },
       include: {
         user: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });
@@ -123,7 +123,7 @@ export class LocationService {
       orderBy: { sharedAt: 'desc' },
       include: {
         user: {
-          select: { id: true, email: true, username: true },
+          select: { id: true, email: true, username: true, name: true, phone: true },
         },
       },
     });
