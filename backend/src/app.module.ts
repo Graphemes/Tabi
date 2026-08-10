@@ -12,6 +12,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { FriendsModule } from './friends/friends.module';
 import { OtpModule } from './otp/otp.module';
 import { UsersModule } from './users/users.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     FriendsModule,
     OtpModule,
     UsersModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
