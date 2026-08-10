@@ -206,3 +206,42 @@ export const createExpense = async (
   });
   return data;
 };
+
+export type ApiSplitRule = {
+  id: number;
+  userId: number;
+  groupId: number | null;
+  name: string;
+  splitType: string;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const listSplitRules = async (groupId: number) => {
+  const { data } = await http.get<ApiSplitRule[]>(
+    `/groups/${groupId}/split-rules`,
+    { params: { groupId } },
+  );
+  return data;
+};
+
+export const saveSplitRule = async (
+  groupId: number,
+  payload: { name: string; splitType: string; config: Record<string, unknown> },
+) => {
+  const { data } = await http.post<ApiSplitRule>(
+    `/groups/${groupId}/split-rules`,
+    { ...payload, groupId },
+  );
+  return data;
+};
+
+export const uploadReceipt = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await http.post<{ url: string }>("/uploads", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+};

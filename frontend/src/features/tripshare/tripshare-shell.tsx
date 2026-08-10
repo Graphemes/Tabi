@@ -272,7 +272,11 @@ export function TripShareShell() {
             onFabClick={() => setActiveOverlay("create-group")}
           />
         ) : activeTab === "expenses" ? (
-          <ExpensesView groups={groups} onSelectGroup={(id) => { setSelectedGroupId(id); setActiveTab("chat"); }} />
+          <ExpensesView
+            groups={groups}
+            onSelectGroup={(id) => { setSelectedGroupId(id); setActiveTab("chat"); }}
+            onAddExpense={(id) => { setSelectedGroupId(id); setActiveOverlay("add-expense"); }}
+          />
         ) : (
           <MapView />
         )}

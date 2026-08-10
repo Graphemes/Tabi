@@ -1,36 +1,93 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, Tag, ChevronDown, Camera, Check } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, CalendarDays, Tag, ChevronDown, Camera, Check, X, Repeat, Wallet, Loader2 } from "lucide-react";
 import { http } from "@/lib/http";
+import { env } from "@/lib/env";
 import { useAuthStore } from "@/store/auth-store";
+import { listSplitRules, saveSplitRule, uploadReceipt } from "@/features/whatsapp/api";
 import type { ApiGroup } from "@/features/whatsapp/api";
+import { ItemizedSplit, itemsTotal, type ItemDraft } from "./add-expense-itemized";
 
-type SplitMode = "EQUAL" | "PERCENTAGE" | "EXACT";
+type SplitMode = "EQUAL" | "UNEQUAL" | "PERCENTAGE" | "SHARE" | "ADJUSTMENT" | "ITEMIZED";
+
+const SPLIT_MODES: { value: SplitMode; label: string }[] = [
+  { value: "EQUAL", label: "Equal" },
+  { value: "UNEQUAL", label: "Unequal" },
+  { value: "PERCENTAGE", label: "Percentage" },
+  { value: "SHARE", label: "Shares" },
+  { value: "ADJUSTMENT", label: "Adjustment" },
+  { value: "ITEMIZED", label: "Itemized" },
+];
+
+// Values must match the backend `ExpenseCategory` Prisma enum exactly.
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: "TRAVEL", label: "Travel" },
+  { value: "FOOD", label: "Food & Drink" },
+  { value: "STAY", label: "Stay" },
+  { value: "TRANSPORT", label: "Transport" },
+  { value: "SHOPPING", label: "Shopping" },
+  { value: "ENTERTAINMENT", label: "Entertainment" },
+  { value: "UTILITIES", label: "Utilities" },
+  { value: "OTHER", label: "Other" },
+];
+
+const CURRENCIES = ["USD", "EUR", "GBP", "INR", "JPY", "AUD", "CAD"];
+
+const RECURRING_FREQUENCIES = [
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "YEARLY", label: "Yearly" },
+];
+
+// Split modes whose per-member values (not items) can be saved/reused as a rule.
+const SAVEABLE_MODES: SplitMode[] = ["UNEQUAL", "PERCENTAGE", "SHARE", "ADJUSTMENT"];
 
 type Props = {
   group: ApiGroup;
   onBack: () => void;
 };
 
+function formatMoney(value: number) {
+  return `$${value.toFixed(2)}`;
+}
+
 export function AddExpense({ group, onBack }: Props) {
   const queryClient = useQueryClient();
   const authUser = useAuthStore((s) => s.user);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState((group.defaultCurrency || "USD").toUpperCase());
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [category, setCategory] = useState("OTHER");
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("MONTHLY");
+
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [receiptName, setReceiptName] = useState<string | null>(null);
+
+  const [multiPayer, setMultiPayer] = useState(false);
   const [selectedPayerId, setSelectedPayerId] = useState<number>(authUser?.id ?? 0);
+  const [payerIds, setPayerIds] = useState<Set<number>>(new Set(authUser ? [authUser.id] : []));
+  const [payerValues, setPayerValues] = useState<Record<number, string>>({});
+
   const [splitMode, setSplitMode] = useState<SplitMode>("EQUAL");
   const [memberValues, setMemberValues] = useState<Record<number, string>>({});
   const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set());
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
-  const [category, setCategory] = useState("General");
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [items, setItems] = useState<ItemDraft[]>([]);
 
-  const categories = ["General", "Food & Drink", "Transportation", "Accommodation", "Shopping", "Entertainment", "Utilities", "Healthcare"];
+  const [saveAsRule, setSaveAsRule] = useState(false);
+  const [ruleName, setRuleName] = useState("");
 
   const members = group.members;
+  const otherMembers = members.filter((m) => m.userId !== authUser?.id);
+
   const includedMembers = useMemo(
     () => members.filter((m) => !excludedIds.has(m.userId)),
     [members, excludedIds],
@@ -38,68 +95,192 @@ export function AddExpense({ group, onBack }: Props) {
 
   const totalAmount = parseFloat(amount) || 0;
 
-  const equalShare = includedMembers.length > 0
-    ? (totalAmount / includedMembers.length).toFixed(2)
-    : "0.00";
+  const equalShare = includedMembers.length > 0 ? totalAmount / includedMembers.length : 0;
 
-  const percentTotal = useMemo(() => {
-    if (splitMode !== "PERCENTAGE") return 0;
-    return includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0);
-  }, [splitMode, includedMembers, memberValues]);
+  const percentTotal = useMemo(
+    () => includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0),
+    [includedMembers, memberValues],
+  );
+  const exactTotal = useMemo(
+    () => includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0),
+    [includedMembers, memberValues],
+  );
+  const shareTotal = useMemo(
+    () => includedMembers.reduce((sum, m) => sum + (parseInt(memberValues[m.userId], 10) || 0), 0),
+    [includedMembers, memberValues],
+  );
+  const adjustmentNet = useMemo(
+    () => includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0),
+    [includedMembers, memberValues],
+  );
+  const itemsSum = useMemo(() => itemsTotal(items), [items]);
 
-  const exactTotal = useMemo(() => {
-    if (splitMode !== "EXACT") return 0;
-    return includedMembers.reduce((sum, m) => sum + (parseFloat(memberValues[m.userId]) || 0), 0);
-  }, [splitMode, includedMembers, memberValues]);
+  const splitRulesQuery = useQuery({
+    queryKey: ["groups", group.id, "split-rules"],
+    queryFn: () => listSplitRules(group.id),
+  });
+  const applicableRules = (splitRulesQuery.data ?? []).filter((rule) =>
+    SAVEABLE_MODES.includes(rule.splitType as SplitMode),
+  );
 
-  const categoryMap: Record<string, string> = {
-    General: "OTHER",
-    "Food & Drink": "FOOD_AND_DRINK",
-    Transportation: "TRANSPORTATION",
-    Accommodation: "ACCOMMODATION",
-    Shopping: "SHOPPING",
-    Entertainment: "ENTERTAINMENT",
-    Utilities: "UTILITIES",
-    Healthcare: "HEALTHCARE",
+  const splitError = useMemo(() => {
+    if (splitMode === "EQUAL") {
+      return includedMembers.length === 0 ? "Select at least one person" : null;
+    }
+    if (splitMode === "UNEQUAL") {
+      return Math.abs(exactTotal - totalAmount) > 0.01
+        ? `Amounts must add up to ${formatMoney(totalAmount)}`
+        : null;
+    }
+    if (splitMode === "PERCENTAGE") {
+      return Math.abs(percentTotal - 100) > 0.01 ? "Percentages must total 100%" : null;
+    }
+    if (splitMode === "SHARE") {
+      return shareTotal <= 0 ? "Enter shares greater than 0" : null;
+    }
+    if (splitMode === "ADJUSTMENT") {
+      return Math.abs(adjustmentNet) > 0.01
+        ? `Adjustments must net to $0.00 (currently ${formatMoney(adjustmentNet)})`
+        : null;
+    }
+    if (splitMode === "ITEMIZED") {
+      if (items.length === 0) return "Add at least one item";
+      if (items.some((i) => !i.name.trim() || (parseFloat(i.amount) || 0) <= 0 || i.participantUserIds.length === 0)) {
+        return "Each item needs a name, an amount, and at least one person";
+      }
+      if (Math.abs(itemsSum - totalAmount) > 0.01) {
+        return `Item totals must add up to ${formatMoney(totalAmount)}`;
+      }
+      return null;
+    }
+    return null;
+  }, [splitMode, includedMembers.length, exactTotal, percentTotal, shareTotal, adjustmentNet, items, itemsSum, totalAmount]);
+
+  const payerTotal = multiPayer
+    ? Array.from(payerIds).reduce((sum, id) => sum + (parseFloat(payerValues[id]) || 0), 0)
+    : totalAmount;
+
+  const payerError = !multiPayer
+    ? null
+    : payerIds.size === 0
+      ? "Select at least one payer"
+      : Math.abs(payerTotal - totalAmount) > 0.01
+        ? `Paid amounts must add up to ${formatMoney(totalAmount)}`
+        : null;
+
+  const uploadMutation = useMutation({
+    mutationFn: uploadReceipt,
+    onSuccess: (data, file) => {
+      setReceiptUrl(data.url);
+      setReceiptName(file.name);
+    },
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    uploadMutation.mutate(file);
   };
 
+  const buildParticipants = () => {
+    return includedMembers.map((m) => {
+      if (splitMode === "UNEQUAL") {
+        return { userId: m.userId, exactAmount: parseFloat(memberValues[m.userId]) || 0 };
+      }
+      if (splitMode === "PERCENTAGE") {
+        return { userId: m.userId, percentage: parseFloat(memberValues[m.userId]) || 0 };
+      }
+      if (splitMode === "SHARE") {
+        return { userId: m.userId, shares: parseInt(memberValues[m.userId], 10) || 0 };
+      }
+      if (splitMode === "ADJUSTMENT") {
+        return { userId: m.userId, adjustmentAmount: parseFloat(memberValues[m.userId]) || 0 };
+      }
+      return { userId: m.userId };
+    });
+  };
+
+  const buildPaidBy = () =>
+    multiPayer
+      ? Array.from(payerIds).map((userId) => ({ userId, amount: parseFloat(payerValues[userId]) || 0 }))
+      : [{ userId: selectedPayerId, amount: totalAmount }];
+
   const createExpenseMutation = useMutation({
-    mutationFn: () =>
-      http.post(`/groups/${group.id}/expenses`, {
+    mutationFn: async () => {
+      const payload: Record<string, unknown> = {
         title,
         totalAmount,
-        currency: group.defaultCurrency || "USD",
-        splitType: splitMode === "EXACT" ? "UNEQUAL" : splitMode,
-        category: categoryMap[category] || "OTHER",
-        paidBy: [{ userId: selectedPayerId, amount: totalAmount }],
-        participants: includedMembers.map((m) => ({
-          userId: m.userId,
-          ...(splitMode === "EXACT" ? { exactAmount: parseFloat(memberValues[m.userId]) || 0 } : {}),
-          ...(splitMode === "PERCENTAGE" ? { percentage: parseFloat(memberValues[m.userId]) || 0 } : {}),
-        })),
+        currency,
+        splitType: splitMode,
+        category,
+        notes: notes.trim() || undefined,
+        attachmentUrl: receiptUrl || undefined,
+        paidBy: buildPaidBy(),
         expenseDate: new Date(expenseDate).toISOString(),
-      }),
+        isRecurring,
+        recurringRule: isRecurring ? recurringFrequency : undefined,
+      };
+
+      if (splitMode === "ITEMIZED") {
+        const itemParticipantIds = new Set<number>();
+        items.forEach((item) => item.participantUserIds.forEach((id) => itemParticipantIds.add(id)));
+        payload.participants = Array.from(itemParticipantIds).map((userId) => ({ userId }));
+        payload.items = items.map((item) => ({
+          name: item.name,
+          amount: parseFloat(item.amount) || 0,
+          quantity: parseInt(item.quantity, 10) || 1,
+          participantUserIds: item.participantUserIds,
+        }));
+      } else {
+        payload.participants = buildParticipants();
+      }
+
+      const { data } = await http.post(`/groups/${group.id}/expenses`, payload);
+
+      if (saveAsRule && SAVEABLE_MODES.includes(splitMode) && ruleName.trim()) {
+        try {
+          await saveSplitRule(group.id, {
+            name: ruleName.trim(),
+            splitType: splitMode,
+            config: {
+              memberValues,
+              excludedIds: Array.from(excludedIds),
+            },
+          });
+          queryClient.invalidateQueries({ queryKey: ["groups", group.id, "split-rules"] });
+        } catch {
+          // Best-effort: the expense itself already saved successfully.
+        }
+      }
+
+      return data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups", group.id, "expenses"] });
       onBack();
     },
   });
 
-  const otherMembers = members.filter((m) => m.userId !== authUser?.id);
+  const applyRule = (ruleId: string) => {
+    const rule = applicableRules.find((r) => String(r.id) === ruleId);
+    if (!rule) return;
+    const config = rule.config as { memberValues?: Record<string, string>; excludedIds?: number[] };
+    setSplitMode(rule.splitType as SplitMode);
+    setMemberValues(config.memberValues ?? {});
+    setExcludedIds(new Set(config.excludedIds ?? []));
+  };
 
-  const handleMemberValue = (userId: number, val: string) => {
-    const cleaned = val.replace(/[^0-9.]/g, "");
+  const handleMemberValue = (userId: number, val: string, allowDecimal = true) => {
+    const cleaned = allowDecimal ? val.replace(/[^0-9.-]/g, "") : val.replace(/[^0-9-]/g, "");
     setMemberValues((prev) => ({ ...prev, [userId]: cleaned }));
   };
 
   const toggleExcluded = (userId: number) => {
     setExcludedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) {
-        next.delete(userId);
-      } else {
-        next.add(userId);
-      }
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
       return next;
     });
   };
@@ -107,23 +288,22 @@ export function AddExpense({ group, onBack }: Props) {
   const selectAll = () => setExcludedIds(new Set());
   const deselectAll = () => setExcludedIds(new Set(members.map((m) => m.userId)));
 
-  const tabsForMode: Record<SplitMode, { label: string; mode: SplitMode }[]> = {
-    EQUAL: [
-      { label: "Equal", mode: "EQUAL" },
-      { label: "%", mode: "PERCENTAGE" },
-      { label: "Adj.", mode: "EXACT" },
-    ],
-    PERCENTAGE: [
-      { label: "Equal", mode: "EQUAL" },
-      { label: "%", mode: "PERCENTAGE" },
-      { label: "Shares", mode: "EXACT" },
-    ],
-    EXACT: [
-      { label: "Equal", mode: "EQUAL" },
-      { label: "%", mode: "PERCENTAGE" },
-      { label: "Exact", mode: "EXACT" },
-    ],
+  const togglePayer = (userId: number) => {
+    setPayerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
   };
+
+  const canSave =
+    Boolean(title.trim()) &&
+    totalAmount > 0 &&
+    !splitError &&
+    !payerError &&
+    !uploadMutation.isPending &&
+    !createExpenseMutation.isPending;
 
   return (
     <div className="flex flex-1 flex-col bg-[#F8F9FF]">
@@ -136,11 +316,11 @@ export function AddExpense({ group, onBack }: Props) {
         </div>
         <button
           type="button"
-          disabled={!title.trim() || totalAmount <= 0 || createExpenseMutation.isPending}
+          disabled={!canSave}
           onClick={() => createExpenseMutation.mutate()}
           className="rounded-full bg-[#FE6B00] px-5 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
         >
-          SAVE
+          {createExpenseMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "SAVE"}
         </button>
       </header>
 
@@ -156,7 +336,17 @@ export function AddExpense({ group, onBack }: Props) {
               />
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xl font-semibold text-[#0B1C30]">$</span>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="rounded-lg border border-[#E2E8F0] bg-[#F8F9FF] px-2 py-3 text-sm font-semibold text-[#0B1C30] focus:outline-none"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
@@ -189,210 +379,469 @@ export function AddExpense({ group, onBack }: Props) {
             >
               <div className="flex items-center gap-3">
                 <Tag className="size-5 text-[#404848]" />
-                <span className="text-sm text-[#0B1C30]">{category}</span>
+                <span className="text-sm text-[#0B1C30]">
+                  {CATEGORIES.find((c) => c.value === category)?.label ?? "Other"}
+                </span>
               </div>
               <ChevronDown className="size-4 text-[#404848]" />
             </button>
             {showCategoryPicker && (
               <div className="absolute left-0 right-0 top-full z-10 mx-4 rounded-lg border border-[#E2E8F0] bg-white shadow-lg">
-                {categories.map((c) => (
+                {CATEGORIES.map((c) => (
                   <button
-                    key={c}
+                    key={c.value}
                     type="button"
-                    onClick={() => { setCategory(c); setShowCategoryPicker(false); }}
-                    className={"w-full px-4 py-2.5 text-left text-sm transition first:rounded-t-lg last:rounded-b-lg hover:bg-[#F8F9FF] " + (category === c ? "font-semibold text-[#003535]" : "text-[#0B1C30]")}
+                    onClick={() => {
+                      setCategory(c.value);
+                      setShowCategoryPicker(false);
+                    }}
+                    className={
+                      "w-full px-4 py-2.5 text-left text-sm transition first:rounded-t-lg last:rounded-b-lg hover:bg-[#F8F9FF] " +
+                      (category === c.value ? "font-semibold text-[#003535]" : "text-[#0B1C30]")
+                    }
                   >
-                    {c}
+                    {c.label}
                   </button>
                 ))}
               </div>
             )}
           </div>
+
+          <div className="border-t border-[#E2E8F0] p-4">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add notes (optional)"
+              rows={2}
+              className="w-full resize-none rounded-lg border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
+            />
+          </div>
+
+          <div className="border-t border-[#E2E8F0] p-4">
+            <label className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm text-[#0B1C30]">
+                <Repeat className="size-4 text-[#404848]" />
+                Repeat this expense
+              </span>
+              <input
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => setIsRecurring(e.target.checked)}
+                className="size-4 accent-[#003535]"
+              />
+            </label>
+            {isRecurring && (
+              <select
+                value={recurringFrequency}
+                onChange={(e) => setRecurringFrequency(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-[#E2E8F0] bg-[#F8F9FF] px-3 py-2 text-sm text-[#0B1C30] focus:outline-none"
+              >
+                {RECURRING_FREQUENCIES.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
 
         <div>
-          <p className="mb-3 text-xs font-semibold tracking-wider text-[#6B7280]">PAID BY</p>
-          <div className="flex flex-wrap gap-2">
-            {authUser && (
-              <button
-                type="button"
-                onClick={() => setSelectedPayerId(authUser.id)}
-                className={"flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (selectedPayerId === authUser.id
-                  ? "border-[#003535] bg-[#003535] text-white"
-                  : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")}
-              >
-                <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
-                  {authUser.name?.[0] || "U"}
-                </div>
-                Me
-              </button>
-            )}
-            {otherMembers.map((m) => (
-              <button
-                key={m.userId}
-                type="button"
-                onClick={() => setSelectedPayerId(m.userId)}
-                className={"flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (selectedPayerId === m.userId
-                  ? "border-[#003535] bg-[#003535] text-white"
-                  : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")}
-              >
-                <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
-                  {(m.user.name || "U")[0]}
-                </div>
-                {m.user.name || `User ${m.userId}`}
-              </button>
-            ))}
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-semibold tracking-wider text-[#6B7280]">PAID BY</p>
+            <button
+              type="button"
+              onClick={() => setMultiPayer((v) => !v)}
+              className="text-xs font-semibold text-[#FE6B00]"
+            >
+              {multiPayer ? "Use single payer" : "Split payment"}
+            </button>
           </div>
+
+          {!multiPayer ? (
+            <div className="flex flex-wrap gap-2">
+              {authUser && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPayerId(authUser.id)}
+                  className={
+                    "flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " +
+                    (selectedPayerId === authUser.id
+                      ? "border-[#003535] bg-[#003535] text-white"
+                      : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")
+                  }
+                >
+                  <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
+                    {authUser.name?.[0] || "U"}
+                  </div>
+                  Me
+                </button>
+              )}
+              {otherMembers.map((m) => (
+                <button
+                  key={m.userId}
+                  type="button"
+                  onClick={() => setSelectedPayerId(m.userId)}
+                  className={
+                    "flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " +
+                    (selectedPayerId === m.userId
+                      ? "border-[#003535] bg-[#003535] text-white"
+                      : "border-[#E2E8F0] bg-white text-[#0B1C30] hover:bg-[#F8F9FF]")
+                  }
+                >
+                  <div className="flex size-6 items-center justify-center rounded-full bg-[#DEE3E3] text-[10px] font-bold text-[#2A3030]">
+                    {(m.user.name || "U")[0]}
+                  </div>
+                  {m.user.name || `User ${m.userId}`}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+              <div className="space-y-1 p-2">
+                {members.map((m) => {
+                  const checked = payerIds.has(m.userId);
+                  return (
+                    <div key={m.userId} className="flex items-center justify-between rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => togglePayer(m.userId)}
+                          className={
+                            "flex size-6 items-center justify-center rounded-full border-2 transition " +
+                            (checked ? "border-[#003535] bg-[#003535] text-white" : "border-[#DEE3E3] bg-white")
+                          }
+                        >
+                          {checked && <Check className="size-3.5" />}
+                        </button>
+                        <span className="text-sm font-medium text-[#0B1C30]">
+                          {m.userId === authUser?.id ? "Me" : m.user.name || `User ${m.userId}`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-[#6B7280]">$</span>
+                        <input
+                          value={payerValues[m.userId] ?? ""}
+                          disabled={!checked}
+                          onChange={(e) =>
+                            setPayerValues((prev) => ({
+                              ...prev,
+                              [m.userId]: e.target.value.replace(/[^0-9.]/g, ""),
+                            }))
+                          }
+                          placeholder="0.00"
+                          className="w-20 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+                <span className="text-xs font-semibold text-[#6B7280]">PAID:</span>
+                <span className={"text-sm font-medium " + (!payerError ? "text-[#003535]" : "text-red-500")}>
+                  {formatMoney(payerTotal)} / {formatMoney(totalAmount)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3">
             <p className="text-xs font-semibold tracking-wider text-[#6B7280]">SPLIT BY</p>
-            <span className="rounded border border-[#FE6B00]/30 bg-[#FE6B00]/10 px-2 py-0.5 text-[10px] font-semibold text-[#FE6B00]">
-              MODE: {splitMode}
-            </span>
+            {applicableRules.length > 0 && (
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) applyRule(e.target.value);
+                  e.target.value = "";
+                }}
+                className="rounded border border-[#E2E8F0] bg-white px-2 py-1 text-xs text-[#0B1C30] focus:outline-none"
+              >
+                <option value="" disabled>
+                  Use saved split
+                </option>
+                {applicableRules.map((rule) => (
+                  <option key={rule.id} value={rule.id}>
+                    {rule.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          <div className="flex border-b border-[#E2E8F0]">
-            {tabsForMode[splitMode].map((tab) => (
+          <div className="flex gap-2 overflow-x-auto border-b border-[#E2E8F0] px-3 py-2">
+            {SPLIT_MODES.map((tab) => (
               <button
-                key={tab.label}
+                key={tab.value}
                 type="button"
-                onClick={() => setSplitMode(tab.mode)}
-                className={"flex-1 border-b-2 py-3 text-center text-sm font-medium transition " + (splitMode === tab.mode
-                  ? "border-[#003535] text-[#003535]"
-                  : "border-transparent text-[#6B7280] hover:text-[#0B1C30]")}
+                onClick={() => setSplitMode(tab.value)}
+                className={
+                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition " +
+                  (splitMode === tab.value
+                    ? "border-[#003535] bg-[#003535] text-white"
+                    : "border-[#E2E8F0] bg-white text-[#6B7280] hover:text-[#0B1C30]")
+                }
               >
                 {tab.label}
               </button>
             ))}
           </div>
 
-          <div className="border-b border-[#E2E8F0] px-4 py-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-[#0B1C30]">Split with subset</span>
-              <button
-                type="button"
-                onClick={excludedIds.size > 0 ? selectAll : deselectAll}
-                className="text-xs font-semibold text-[#FE6B00]"
-              >
-                {excludedIds.size > 0 ? "Select All" : "Deselect All"}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1 p-2">
-            {members.map((m) => {
-              const isPayer = m.userId === selectedPayerId;
-              const isExcluded = excludedIds.has(m.userId);
-              const isIncluded = !isExcluded;
-              const val = memberValues[m.userId] ?? "";
-
-              let displayAmount = "";
-              if (splitMode === "EQUAL" && isIncluded) {
-                displayAmount = `$${equalShare}`;
-              } else if (splitMode === "EQUAL" && isExcluded) {
-                displayAmount = "$0.00";
-              }
-
-              return (
-                <div
-                  key={m.userId}
-                  className={"flex items-center justify-between rounded-lg px-3 py-2.5 " + (isPayer && isIncluded ? "bg-[#F0F7FF]" : "") + (isExcluded ? " opacity-50" : "")}
+          {splitMode !== "ITEMIZED" && (
+            <div className="border-b border-[#E2E8F0] px-4 py-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#0B1C30]">Split with subset</span>
+                <button
+                  type="button"
+                  onClick={excludedIds.size > 0 ? selectAll : deselectAll}
+                  className="text-xs font-semibold text-[#FE6B00]"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleExcluded(m.userId)}
-                      className={"flex size-6 items-center justify-center rounded-full border-2 transition " + (isIncluded
-                        ? "border-[#003535] bg-[#003535] text-white"
-                        : "border-[#DEE3E3] bg-white")}
-                    >
-                      {isIncluded && <Check className="size-3.5" />}
-                    </button>
-                    <div className="flex size-8 items-center justify-center rounded-full bg-[#DEE3E3] text-xs font-bold text-[#2A3030]">
-                      {(m.user.name || "U")[0]}
+                  {excludedIds.size > 0 ? "Select All" : "Deselect All"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {splitMode === "ITEMIZED" ? (
+            <ItemizedSplit group={group} items={items} onChange={setItems} />
+          ) : (
+            <div className="space-y-1 p-2">
+              {members.map((m) => {
+                const isPayer = !multiPayer && m.userId === selectedPayerId;
+                const isExcluded = excludedIds.has(m.userId);
+                const isIncluded = !isExcluded;
+                const val = memberValues[m.userId] ?? "";
+
+                let preview = "";
+                if (splitMode === "EQUAL") {
+                  preview = isIncluded ? formatMoney(equalShare) : "$0.00 (Excluded)";
+                } else if (splitMode === "SHARE" && isIncluded && shareTotal > 0) {
+                  const shares = parseInt(val, 10) || 0;
+                  preview = formatMoney((totalAmount * shares) / shareTotal);
+                } else if (splitMode === "ADJUSTMENT" && isIncluded) {
+                  const adj = parseFloat(val) || 0;
+                  preview = formatMoney(equalShare + adj);
+                }
+
+                return (
+                  <div
+                    key={m.userId}
+                    className={
+                      "flex items-center justify-between rounded-lg px-3 py-2.5 " +
+                      (isPayer && isIncluded ? "bg-[#F0F7FF]" : "") +
+                      (isExcluded ? " opacity-50" : "")
+                    }
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleExcluded(m.userId)}
+                        className={
+                          "flex size-6 items-center justify-center rounded-full border-2 transition " +
+                          (isIncluded ? "border-[#003535] bg-[#003535] text-white" : "border-[#DEE3E3] bg-white")
+                        }
+                      >
+                        {isIncluded && <Check className="size-3.5" />}
+                      </button>
+                      <div className="flex size-8 items-center justify-center rounded-full bg-[#DEE3E3] text-xs font-bold text-[#2A3030]">
+                        {(m.user.name || "U")[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#0B1C30]">
+                          {m.user.name || `User ${m.userId}`}
+                        </p>
+                        {isPayer && isIncluded && <p className="text-[10px] text-[#FE6B00]">Payer</p>}
+                        {(splitMode === "SHARE" || splitMode === "ADJUSTMENT") && isIncluded && preview && (
+                          <p className="text-[10px] text-[#6B7280]">{preview}</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-[#0B1C30]">
-                        {m.user.name || `User ${m.userId}`}
-                      </p>
-                      {isPayer && isIncluded && (
-                        <p className="text-[10px] text-[#FE6B00]">Payer</p>
+
+                    <div className="flex items-center gap-2">
+                      {splitMode === "EQUAL" ? (
+                        <span className="text-sm font-medium text-[#6B7280]">{preview}</span>
+                      ) : splitMode === "PERCENTAGE" ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            value={val}
+                            onChange={(e) => handleMemberValue(m.userId, e.target.value)}
+                            placeholder={isIncluded ? "0" : "-"}
+                            disabled={isExcluded}
+                            className="w-16 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                          />
+                          <span className="text-sm text-[#6B7280]">%</span>
+                        </div>
+                      ) : splitMode === "SHARE" ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            value={val}
+                            onChange={(e) => handleMemberValue(m.userId, e.target.value, false)}
+                            placeholder={isIncluded ? "0" : "-"}
+                            disabled={isExcluded}
+                            className="w-14 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                          />
+                          <span className="text-sm text-[#6B7280]">sh</span>
+                        </div>
+                      ) : splitMode === "ADJUSTMENT" ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm text-[#6B7280]">±$</span>
+                          <input
+                            value={val}
+                            onChange={(e) => handleMemberValue(m.userId, e.target.value)}
+                            placeholder={isIncluded ? "0.00" : "-"}
+                            disabled={isExcluded}
+                            className="w-20 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm text-[#6B7280]">$</span>
+                          <input
+                            value={val}
+                            onChange={(e) => handleMemberValue(m.userId, e.target.value)}
+                            placeholder={isIncluded ? "0.00" : "-"}
+                            disabled={isExcluded}
+                            className="w-20 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
+                          />
+                        </div>
                       )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    {splitMode === "EQUAL" ? (
-                      <span className="text-sm font-medium text-[#6B7280]">
-                        {isExcluded ? "$0.00 (Excluded)" : displayAmount}
-                      </span>
-                    ) : splitMode === "PERCENTAGE" ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          value={val}
-                          onChange={(e) => handleMemberValue(m.userId, e.target.value)}
-                          placeholder={isIncluded ? "0" : "-"}
-                          disabled={isExcluded}
-                          className="w-16 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
-                        />
-                        <span className="text-sm text-[#6B7280]">%</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm text-[#6B7280]">$</span>
-                        <input
-                          value={val}
-                          onChange={(e) => handleMemberValue(m.userId, e.target.value)}
-                          placeholder={isIncluded ? "0.00" : "-"}
-                          disabled={isExcluded}
-                          className="w-20 rounded border border-[#E2E8F0] px-2 py-1 text-right text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30 disabled:opacity-40"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           {splitMode === "PERCENTAGE" && includedMembers.length > 0 && (
             <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
               <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
-              <span className={"text-sm font-medium " + (percentTotal === 100 ? "text-[#003535]" : "text-red-500")}>
+              <span className={"text-sm font-medium " + (!splitError ? "text-[#003535]" : "text-red-500")}>
                 {percentTotal.toFixed(0)}%
               </span>
             </div>
           )}
 
-          {splitMode === "EXACT" && includedMembers.length > 0 && (
+          {splitMode === "UNEQUAL" && includedMembers.length > 0 && (
             <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
               <span className="text-xs font-semibold text-[#6B7280]">TOTAL:</span>
-              <span className={"text-sm font-medium " + (Math.abs(exactTotal - totalAmount) < 0.01 ? "text-[#003535]" : "text-red-500")}>
-                ${exactTotal.toFixed(2)}
+              <span className={"text-sm font-medium " + (!splitError ? "text-[#003535]" : "text-red-500")}>
+                {formatMoney(exactTotal)}
               </span>
+            </div>
+          )}
+
+          {splitMode === "SHARE" && includedMembers.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+              <span className="text-xs font-semibold text-[#6B7280]">TOTAL SHARES:</span>
+              <span className={"text-sm font-medium " + (!splitError ? "text-[#003535]" : "text-red-500")}>
+                {shareTotal}
+              </span>
+            </div>
+          )}
+
+          {splitMode === "ADJUSTMENT" && includedMembers.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+              <span className="text-xs font-semibold text-[#6B7280]">ADJUSTMENTS NET:</span>
+              <span className={"text-sm font-medium " + (!splitError ? "text-[#003535]" : "text-red-500")}>
+                {formatMoney(adjustmentNet)}
+              </span>
+            </div>
+          )}
+
+          {splitMode === "ITEMIZED" && items.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-2.5">
+              <span className="text-xs font-semibold text-[#6B7280]">ITEMS TOTAL:</span>
+              <span className={"text-sm font-medium " + (!splitError ? "text-[#003535]" : "text-red-500")}>
+                {formatMoney(itemsSum)} / {formatMoney(totalAmount)}
+              </span>
+            </div>
+          )}
+
+          {SAVEABLE_MODES.includes(splitMode) && (
+            <div className="border-t border-[#E2E8F0] p-3">
+              <label className="flex items-center gap-2 text-sm text-[#0B1C30]">
+                <input
+                  type="checkbox"
+                  checked={saveAsRule}
+                  onChange={(e) => setSaveAsRule(e.target.checked)}
+                  className="size-4 accent-[#003535]"
+                />
+                Save this split for reuse
+              </label>
+              {saveAsRule && (
+                <input
+                  value={ruleName}
+                  onChange={(e) => setRuleName(e.target.value)}
+                  placeholder="Name this split (e.g. Roommates 50/50)"
+                  className="mt-2 w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-sm text-[#0B1C30] focus:outline-none focus:ring-1 focus:ring-[#FE6B00]/30"
+                />
+              )}
             </div>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#E2E8F0] bg-white py-4 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
-        >
-          <Camera className="size-4" />
-          Attach Receipt
-        </button>
+        <div className="rounded-xl border border-dashed border-[#E2E8F0] bg-white p-3">
+          {receiptUrl ? (
+            <div className="flex items-center gap-3">
+              <img
+                src={`${env.apiBaseUrl}${receiptUrl}`}
+                alt="Receipt"
+                className="size-12 shrink-0 rounded-lg object-cover"
+              />
+              <span className="min-w-0 flex-1 truncate text-sm text-[#0B1C30]">
+                {receiptName || "Receipt attached"}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setReceiptUrl(null);
+                  setReceiptName(null);
+                }}
+                className="rounded-full p-1.5 text-[#6B7280] hover:bg-[#F8F9FF]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadMutation.isPending}
+              className="flex w-full items-center justify-center gap-2 py-2 text-sm text-[#6B7280] hover:bg-[#F8F9FF]"
+            >
+              {uploadMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Camera className="size-4" />
+                  Attach Receipt
+                </>
+              )}
+            </button>
+          )}
+          {uploadMutation.isError && (
+            <p className="mt-1 text-center text-xs text-red-500">Couldn&apos;t upload that image. Try again.</p>
+          )}
+        </div>
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e) => {
-            // receipt attachment handled here
-          }}
+          onChange={handleFileChange}
         />
+
+        {(splitError || payerError) && (
+          <div className="flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">
+            <Wallet className="size-4 shrink-0" />
+            {payerError || splitError}
+          </div>
+        )}
       </div>
 
       {createExpenseMutation.isError && (
