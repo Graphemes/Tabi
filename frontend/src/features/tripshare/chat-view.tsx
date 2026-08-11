@@ -53,9 +53,10 @@ type Props = {
   group: ApiGroup | null;
   onBack: () => void;
   onAddExpense?: (groupId: number) => void;
+  onOpenExpense?: (groupId: number, expenseId: number) => void;
 };
 
-export function ChatView({ group, onBack, onAddExpense }: Props) {
+export function ChatView({ group, onBack, onAddExpense, onOpenExpense }: Props) {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
   const authUser = useAuthStore((s) => s.user);
@@ -97,7 +98,6 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
         ["groups", message.groupId, "messages"],
         (current = []) => {
           if (current.some((m) => m.id === message.id)) return current;
-          // Drop the optimistic placeholder this message confirms.
           const withoutPending = current.filter(
             (m) =>
               !(
@@ -330,6 +330,31 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
                             alt={msg.content ?? "Shared image"}
                             className="max-h-64 rounded-lg object-cover"
                           />
+                        ) : msg.expense ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenExpense?.(msg.groupId, msg.expense!.id)}
+                            className="text-left"
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <Receipt className="size-4 shrink-0" />
+                              <span className="font-semibold text-sm">
+                                {msg.expense.title}
+                              </span>
+                            </div>
+                            <p className="text-xs opacity-80">
+                              {msg.sender?.name || msg.sender?.username || msg.sender?.phone || "Someone"} paid{" "}
+                              <span className="font-medium">
+                                {Number(msg.expense.totalAmount).toLocaleString(undefined, {
+                                  style: "currency",
+                                  currency: msg.expense.currency,
+                                })}
+                              </span>
+                            </p>
+                            <span className="inline-block mt-1 text-xs underline underline-offset-2 opacity-70">
+                              View expense →
+                            </span>
+                          </button>
                         ) : (
                           <p className="break-words whitespace-pre-wrap">{msg.content}</p>
                         )}

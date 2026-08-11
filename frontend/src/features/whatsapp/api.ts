@@ -56,6 +56,14 @@ export type ApiMessage = {
   mediaUrl?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  expenseId?: number | null;
+  expense?: {
+    id: number;
+    title: string;
+    totalAmount: string;
+    currency: string;
+    createdById: number;
+  } | null;
   createdAt: string;
   /** The API includes the sender on both list and create; used for chat avatars/names. */
   sender?: ApiUser | null;

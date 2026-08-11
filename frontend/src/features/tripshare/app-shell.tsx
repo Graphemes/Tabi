@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth-store";
-import { getGroups } from "@/features/whatsapp/api";
+import { getSocket } from "@/lib/socket";
+import { getGroups, type ApiMessage, type ApiGroup } from "@/features/whatsapp/api";
 import { useNav } from "./navigation/nav-context";
 import { SidebarNav } from "./navigation/sidebar-nav";
 import { BottomNav } from "./navigation/bottom-nav";
@@ -16,9 +17,31 @@ import { ChatView } from "./chat-view";
 import { OverlayHost } from "./overlays/overlay-host";
 
 export function AppShell() {
+  const queryClient = useQueryClient();
   const authUser = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const { nav, dispatch, pane } = useNav();
+
+  // pony tail: socket message:new listener always mounted so groups list lastMessage
+  // stays fresh regardless of which tab is active.
+  useEffect(() => {
+    if (!accessToken) return;
+    const socket = getSocket(accessToken);
+    const onMessage = (msg: ApiMessage) => {
+      queryClient.setQueryData<ApiGroup[]>(["groups"], (current = []) =>
+        current.map((g) =>
+          g.id === msg.groupId
+            ? { ...g, lastMessage: msg, updatedAt: msg.createdAt }
+            : g,
+        ),
+      );
+    };
+    socket.on("message:new", onMessage);
+    if (!socket.connected) socket.connect();
+    return () => {
+      socket.off("message:new", onMessage);
+    };
+  }, [accessToken, queryClient]);
 
   const groupsQuery = useQuery({
     queryKey: ["groups"],
@@ -85,6 +108,10 @@ export function AppShell() {
                   onAddExpense={(groupId) =>
                     dispatch({ type: "OPEN_OVERLAY", overlay: { kind: "add-expense", groupId } })
                   }
+                  onOpenExpense={(groupId, expenseId) => {
+                    dispatch({ type: "SELECT_TAB", tab: "expenses" });
+                    dispatch({ type: "SELECT_EXPENSE", ref: { groupId, expenseId } });
+                  }}
                 />
               </DetailPane>
             </PaneGroup>
