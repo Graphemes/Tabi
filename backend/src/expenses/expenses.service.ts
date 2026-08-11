@@ -23,6 +23,7 @@ import { ListExpensesDto } from './dto/list-expenses.dto';
 import { CreateSettlementDto } from './dto/create-settlement.dto';
 import { ActivityService } from '../activity/activity.service';
 import { CreateSplitRuleDto } from './dto/create-split-rule.dto';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 const MONEY_SCALE = 100;
 
@@ -32,6 +33,7 @@ export class ExpensesService {
     private readonly prisma: PrismaService,
     private readonly groupAccessService: GroupAccessService,
     private readonly activityService: ActivityService,
+    private readonly realtimeGateway: RealtimeGateway,
   ) {}
 
   private toCents(value: number): number {
@@ -462,6 +464,49 @@ export class ExpensesService {
         splitType: expense.splitType,
       },
     });
+
+    // pony tail: create chat message linking to this expense
+    const content = JSON.stringify({
+      expenseId: expense.id,
+      title: expense.title,
+      amount: expense.totalAmount.toString(),
+      currency: expense.currency,
+      paidById: userId,
+    });
+
+    const expenseMessage = await this.prisma.message.create({
+      data: {
+        groupId,
+        senderId: userId,
+        type: 'TEXT',
+        content: `EXPENSE:${content}`,
+        expenseId: expense.id,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
+        expense: {
+          select: {
+            id: true,
+            title: true,
+            totalAmount: true,
+            currency: true,
+            createdById: true,
+          },
+        },
+      },
+    });
+
+    this.realtimeGateway.server
+      .to(`group:${groupId}`)
+      .emit('message:new', expenseMessage);
 
     return expense;
   }
