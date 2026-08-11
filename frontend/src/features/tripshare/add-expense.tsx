@@ -258,6 +258,7 @@ export function AddExpense({ group, onBack }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["groups", group.id, "expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
       onBack();
     },
   });
