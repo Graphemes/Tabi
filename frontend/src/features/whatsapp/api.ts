@@ -42,6 +42,8 @@ export type ApiGroup = {
     user: ApiUser;
     status?: string;
   }>;
+  /** Newest message in the group, for the trip-list preview line. */
+  lastMessage?: ApiMessage | null;
   updatedAt: string;
 };
 
@@ -55,6 +57,8 @@ export type ApiMessage = {
   latitude?: number | null;
   longitude?: number | null;
   createdAt: string;
+  /** The API includes the sender on both list and create; used for chat avatars/names. */
+  sender?: ApiUser | null;
 };
 
 export const mobileLogin = async (payload: { name: string; mobile: string }) => {

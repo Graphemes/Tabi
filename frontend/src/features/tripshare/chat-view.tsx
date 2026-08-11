@@ -2,22 +2,57 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MapPin, Send, Loader2, MessageCircle, Plus, X, Camera, Image, Receipt } from "lucide-react";
-import { getMessages, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
+import {
+  MapPin,
+  Send,
+  Loader2,
+  MessageCircle,
+  Plus,
+  X,
+  ImagePlus,
+  Receipt,
+  Check,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/app/user-avatar";
+import { EmptyState } from "@/components/app/empty-state";
+import { ScreenHeader } from "@/components/app/screen-header";
+import { getMessages, uploadReceipt, ApiGroup, ApiMessage } from "@/features/whatsapp/api";
 import { useAuthStore } from "@/store/auth-store";
+import { env } from "@/lib/env";
 import { getSocket } from "@/lib/socket";
 
 function formatClock(iso: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    hour: "2-digit",
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
     minute: "2-digit",
   }).format(new Date(iso));
 }
 
+function dayLabel(iso: string) {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (sameDay(date, today)) return "Today";
+  if (sameDay(date, yesterday)) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** A message is "grouped" with the previous one if same sender within 5 minutes. */
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+type PendingMessage = ApiMessage & { pending?: true };
+
 type Props = {
   group: ApiGroup | null;
   onBack: () => void;
-  onAddExpense?: () => void;
+  onAddExpense?: (groupId: number) => void;
 };
 
 export function ChatView({ group, onBack, onAddExpense }: Props) {
@@ -26,7 +61,11 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
   const authUser = useAuthStore((s) => s.user);
   const [text, setText] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -45,17 +84,29 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
     queryFn: () => getMessages(Number(group!.id)),
   });
 
-  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
+  const messages = useMemo(
+    () => (messagesQuery.data ?? []) as PendingMessage[],
+    [messagesQuery.data],
+  );
 
   useEffect(() => {
     if (!accessToken) return;
     const socket = getSocket(accessToken);
     const onMessage = (message: ApiMessage) => {
-      queryClient.setQueryData<ApiMessage[]>(
+      queryClient.setQueryData<PendingMessage[]>(
         ["groups", message.groupId, "messages"],
         (current = []) => {
           if (current.some((m) => m.id === message.id)) return current;
-          return [...current, message];
+          // Drop the optimistic placeholder this message confirms.
+          const withoutPending = current.filter(
+            (m) =>
+              !(
+                m.pending &&
+                m.senderId === message.senderId &&
+                m.content === message.content
+              ),
+          );
+          return [...withoutPending, message];
         },
       );
     };
@@ -66,170 +117,337 @@ export function ChatView({ group, onBack, onAddExpense }: Props) {
     };
   }, [accessToken, queryClient]);
 
-  const handleSend = async () => {
-    if (!group || !text.trim()) return;
+  // Auto-scroll to the newest message. This was missing entirely — the transcript stayed
+  // pinned to the top, so new messages arrived off-screen. `auto` on group switch (jump
+  // straight to the bottom), `smooth` for messages arriving in an open conversation.
+  const didInitialScroll = useRef(false);
+  useEffect(() => {
+    didInitialScroll.current = false;
+  }, [group?.id]);
+
+  useEffect(() => {
+    if (!messages.length) return;
+    const node = scrollRef.current;
+    if (!node) return;
+
+    if (!didInitialScroll.current) {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+      didInitialScroll.current = true;
+      return;
+    }
+    // Only follow along if the reader is already near the bottom, so scrolling back
+    // through history isn't yanked away by an incoming message.
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    if (distanceFromBottom < 160) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages]);
+
+  const handleSend = () => {
+    const body = text.trim();
+    if (!group || !body || !authUser) return;
     const socket = getSocket(accessToken);
     socket.emit("message:send", {
       groupId: group.id,
-      message: { type: "TEXT", content: text.trim() },
+      message: { type: "TEXT", content: body },
     });
+
+    // Optimistic echo so the bubble appears instantly instead of after the round trip.
+    queryClient.setQueryData<PendingMessage[]>(
+      ["groups", group.id, "messages"],
+      (current = []) => [
+        ...current,
+        {
+          id: -Date.now(),
+          groupId: group.id,
+          senderId: authUser.id,
+          type: "TEXT",
+          content: body,
+          createdAt: new Date().toISOString(),
+          sender: authUser,
+          pending: true,
+        },
+      ],
+    );
+
     setText("");
+    requestAnimationFrame(() =>
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }),
+    );
+  };
+
+  const handleImage = async (file: File) => {
+    if (!group) return;
+    setUploading(true);
+    try {
+      const { url } = await uploadReceipt(file);
+      const socket = getSocket(accessToken);
+      socket.emit("message:send", {
+        groupId: group.id,
+        message: { type: "IMAGE", mediaUrl: url, content: file.name },
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const shareLocation = () => {
+    if (!group) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const socket = getSocket(accessToken);
+        socket.emit("location:send-message", {
+          groupId: group.id,
+          payload: { latitude: pos.coords.latitude, longitude: pos.coords.longitude },
+        });
+      },
+      (err) => console.warn("Location error:", err.message),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   };
 
   if (!group) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-        <div className="size-16 rounded-2xl bg-[#DCE9FF] flex items-center justify-center">
-          <MessageCircle className="size-7 text-[#003535]" />
-        </div>
-        <h3 className="text-lg font-semibold text-[#0B1C30]">Select a trip</h3>
-        <p className="max-w-xs text-sm text-[#6B7280]">
-          Choose a trip from the Groups tab to start chatting
-        </p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <EmptyState
+          icon={MessageCircle}
+          title="No conversation open"
+          description="Pick a trip to jump into the group chat."
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex items-center gap-3 border-b border-[#E2E8F0] bg-white px-4 py-3">
-        <button type="button" onClick={onBack} className="rounded-full p-1 hover:bg-[#DCE9FF]">
-          <ArrowLeft className="size-5 text-[#404848]" />
-        </button>
-        <div className="flex size-10 items-center justify-center rounded-full bg-[#DEE3E3] text-sm font-bold text-[#2A3030]">
-          {group.name
-            .split(" ")
-            .map((p) => p[0])
-            .join("")
-            .slice(0, 2)
-            .toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#0B1C30]">{group.name}</p>
-          <p className="text-xs text-[#6B7280]">{group.members.length} members</p>
-        </div>
-      </header>
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      <ScreenHeader
+        title={group.name}
+        subtitle={`${group.members.length} ${group.members.length === 1 ? "member" : "members"}`}
+        onBack={onBack}
+      />
 
-      <div className="flex-1 space-y-2 overflow-y-auto bg-[linear-gradient(180deg,#f5fffb_0%,#f9fcff_100%)] p-4">
-        {messagesQuery.isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-5 animate-spin text-[#6B7280]" />
+      {/* `justify-end` keeps a short transcript pinned to the composer rather than
+          floating at the top of a tall desktop pane. */}
+      <div
+        ref={scrollRef}
+        className="flex min-h-0 flex-1 flex-col justify-end overflow-y-auto px-4 py-4"
+      >
+        {messagesQuery.isPending ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
-          <p className="py-8 text-center text-sm text-[#6B7280]">No messages yet</p>
+          <EmptyState
+            icon={MessageCircle}
+            title="No messages yet"
+            description={`Say hello to the ${group.name} group.`}
+          />
         ) : (
-          messages.map((msg) => {
-            const mine = msg.senderId === authUser?.id;
-            return (
-              <div
-                key={msg.id}
-                className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                  mine ? "ml-auto bg-[#003535] text-white" : "bg-white text-[#0B1C30]"
-                }`}
-              >
-                {msg.type === "LOCATION" ? (
-                  <a
-                    href={msg.content ?? ""}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 underline"
+          <div className="space-y-0.5">
+            {messages.map((msg, i) => {
+              const mine = msg.senderId === authUser?.id;
+              const prev = messages[i - 1];
+              const newDay =
+                !prev ||
+                new Date(prev.createdAt).toDateString() !==
+                  new Date(msg.createdAt).toDateString();
+              const grouped =
+                !newDay &&
+                prev?.senderId === msg.senderId &&
+                new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() <
+                  GROUP_WINDOW_MS;
+              const senderName =
+                msg.sender?.name || msg.sender?.username || `User ${msg.senderId}`;
+
+              return (
+                <div key={msg.id}>
+                  {newDay && (
+                    <div className="flex items-center justify-center py-3">
+                      <span className="rounded-full bg-surface-sunken px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                        {dayLabel(msg.createdAt)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div
+                    className={cn(
+                      "flex items-end gap-2",
+                      mine ? "justify-end" : "justify-start",
+                      grouped ? "mt-0.5" : "mt-2",
+                    )}
                   >
-                    <MapPin className="size-4" />
-                    Shared location
-                  </a>
-                ) : (
-                  <p>{msg.content}</p>
-                )}
-                <p className={`mt-1 text-[10px] ${mine ? "text-white/70" : "text-[#6B7280]"}`}>
-                  {formatClock(msg.createdAt)}
-                </p>
-              </div>
-            );
-          })
+                    {!mine &&
+                      (grouped ? (
+                        <span className="w-7 shrink-0" />
+                      ) : (
+                        <UserAvatar
+                          name={senderName}
+                          seed={msg.senderId}
+                          size="xs"
+                          className="mb-4"
+                        />
+                      ))}
+
+                    <div className={cn("max-w-[78%] min-w-0", mine && "items-end")}>
+                      {!mine && !grouped && (
+                        <p className="mb-1 ml-1 text-[11px] font-medium text-muted-foreground">
+                          {senderName}
+                        </p>
+                      )}
+
+                      <div
+                        className={cn(
+                          "w-fit px-3 py-2 text-sm shadow-card",
+                          mine
+                            ? "ml-auto bg-brand-900 text-brand-50"
+                            : "bg-surface-raised text-foreground ring-1 ring-border",
+                          // Tighter corner on the side the tail would be, and only on the
+                          // last bubble of a run.
+                          mine
+                            ? grouped
+                              ? "rounded-2xl rounded-br-md"
+                              : "rounded-2xl rounded-br-md"
+                            : grouped
+                              ? "rounded-2xl rounded-bl-md"
+                              : "rounded-2xl rounded-bl-md",
+                          msg.pending && "opacity-60",
+                        )}
+                      >
+                        {msg.type === "LOCATION" ? (
+                          <a
+                            href={msg.content ?? "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 underline underline-offset-2"
+                          >
+                            <MapPin className="size-4" />
+                            Shared a location
+                          </a>
+                        ) : msg.type === "IMAGE" && msg.mediaUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- user upload
+                          <img
+                            src={`${env.apiBaseUrl}${msg.mediaUrl}`}
+                            alt={msg.content ?? "Shared image"}
+                            className="max-h-64 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <p className="break-words whitespace-pre-wrap">{msg.content}</p>
+                        )}
+                      </div>
+
+                      <div
+                        className={cn(
+                          "mt-0.5 flex items-center gap-1 px-1",
+                          mine ? "justify-end" : "justify-start",
+                        )}
+                      >
+                        <span className="tabular text-[10px] text-muted-foreground">
+                          {formatClock(msg.createdAt)}
+                        </span>
+                        {mine &&
+                          (msg.pending ? (
+                            <Loader2 className="size-2.5 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Check className="size-3 text-muted-foreground" />
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
+          </div>
         )}
       </div>
 
-      <div ref={menuRef} className="relative">
+      <div ref={menuRef} className="relative shrink-0">
         {showMenu && (
-          <div className="absolute bottom-full left-0 mb-2 ml-2 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-xl">
+          <div className="absolute bottom-full left-3 mb-2 w-52 overflow-hidden rounded-2xl border border-border bg-surface-raised shadow-overlay">
             <button
               type="button"
-              onClick={() => { setShowMenu(false); }}
-              className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+              onClick={() => {
+                setShowMenu(false);
+                fileInputRef.current?.click();
+              }}
+              className="flex w-full items-center gap-3 px-4 py-3 text-sm transition hover:bg-surface-hover"
             >
-              <Camera className="size-5 text-[#404848]" />
-              Camera
-            </button>
-            <button
-              type="button"
-              onClick={() => { setShowMenu(false); }}
-              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
-            >
-              <Image className="size-5 text-[#404848]" />
-              Gallery
+              <ImagePlus className="size-4.5 text-muted-foreground" />
+              Photo
             </button>
             <button
               type="button"
               onClick={() => {
                 setShowMenu(false);
-                if (!group) return;
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => {
-                    const socket = getSocket(accessToken);
-                    socket.emit("location:send-message", {
-                      groupId: group.id,
-                      payload: {
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude,
-                      },
-                    });
-                  },
-                  (err) => console.warn("Location error:", err.message),
-                  { enableHighAccuracy: true, timeout: 10000 },
-                );
+                shareLocation();
               }}
-              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-sm transition hover:bg-surface-hover"
             >
-              <MapPin className="size-5 text-[#404848]" />
+              <MapPin className="size-4.5 text-muted-foreground" />
               Location
             </button>
             <button
               type="button"
               onClick={() => {
                 setShowMenu(false);
-                onAddExpense?.();
+                onAddExpense?.(group.id);
               }}
-              className="flex w-full items-center gap-3 border-t border-[#E2E8F0] px-5 py-3.5 text-sm text-[#0B1C30] hover:bg-[#F8F9FF]"
+              className="flex w-full items-center gap-3 border-t border-border px-4 py-3 text-sm transition hover:bg-surface-hover"
             >
-              <Receipt className="size-5 text-[#404848]" />
+              <Receipt className="size-4.5 text-muted-foreground" />
               Expense
             </button>
           </div>
         )}
-        <footer className="flex items-end gap-2 border-t border-[#E2E8F0] bg-white p-3">
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) handleImage(file);
+          }}
+        />
+
+        <footer className="flex items-end gap-2 border-t border-border bg-surface-raised p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={() => setShowMenu((v) => !v)}
-            className="flex size-[39px] shrink-0 items-center justify-center rounded-full bg-[#E5EEFF] text-[#404848] transition hover:bg-[#DCE9FF]"
+            aria-label="Attach"
+            disabled={uploading}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-sunken text-muted-foreground transition hover:text-foreground disabled:opacity-50"
           >
-            {showMenu ? <X className="size-5" /> : <Plus className="size-5" />}
+            {uploading ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : showMenu ? (
+              <X className="size-5" />
+            ) : (
+              <Plus className="size-5" />
+            )}
           </button>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleSend();
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
             }}
-            placeholder="Type a message..."
-            className="min-h-[40px] flex-1 resize-none rounded-xl border border-[#E2E8F0] bg-[#F8F9FF] px-4 py-2.5 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
+            placeholder="Message"
+            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm transition placeholder:text-muted-foreground focus:border-accent-500/40 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
           />
           <button
             type="button"
             onClick={handleSend}
             disabled={!text.trim()}
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#003535] text-white disabled:opacity-40"
+            aria-label="Send"
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 text-white transition hover:bg-accent-600 disabled:opacity-40"
           >
-            <Send className="size-4" />
+            <Send className="size-4.5" />
           </button>
         </footer>
       </div>

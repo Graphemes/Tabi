@@ -1,36 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Loader2, LogOut, Trash2 } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Loader2, LogOut, Trash2, Monitor, Moon, Sun, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/app/user-avatar";
 import { useAuthStore } from "@/store/auth-store";
 import { getProfile, updateProfile, deleteAccount, logout } from "@/features/whatsapp/api";
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
+type Props = { onBack: () => void };
 
-type Props = {
-  onBack: () => void;
-};
+type ProfileForm = { name: string; username: string; email: string; phone: string };
 
-type ProfileForm = {
-  name: string;
-  username: string;
-  email: string;
-  phone: string;
-};
+const FIELDS: { key: keyof ProfileForm; label: string; placeholder: string; type?: string }[] = [
+  { key: "name", label: "Full name", placeholder: "Your full name" },
+  { key: "username", label: "Username", placeholder: "username" },
+  { key: "email", label: "Email", placeholder: "you@example.com", type: "email" },
+  { key: "phone", label: "Phone", placeholder: "+91 98765 43210" },
+];
+
+const THEMES = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "Auto", icon: Monitor },
+] as const;
+
+// `false` on the server, `true` once hydrated — without the effect-plus-setState dance
+// that the react-hooks lint (rightly) flags as a cascading render.
+const noopSubscribe = () => () => {};
+const useMounted = () =>
+  useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 
 export function ProfilePage({ onBack }: Props) {
   const queryClient = useQueryClient();
   const setAuth = useAuthStore((s) => s.setAuth);
   const authUser = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const { theme, setTheme } = useTheme();
+  // next-themes only knows the active theme after hydration; rendering `theme` on the
+  // server would mismatch the SSR-ed markup.
+  const mounted = useMounted();
 
   const [form, setForm] = useState<ProfileForm>({
     name: "",
@@ -46,16 +61,18 @@ export function ProfilePage({ onBack }: Props) {
     enabled: Boolean(authUser?.id),
   });
 
-  useEffect(() => {
-    if (profileQuery.data) {
-      setForm({
-        name: profileQuery.data.name || "",
-        username: profileQuery.data.username || "",
-        email: profileQuery.data.email || "",
-        phone: profileQuery.data.phone || "",
-      });
-    }
-  }, [profileQuery.data]);
+  // Seed the editable form when server data arrives, adjusting state during render
+  // rather than in an effect — the pattern React documents for "derive from props".
+  const [seededFrom, setSeededFrom] = useState(profileQuery.data);
+  if (profileQuery.data && profileQuery.data !== seededFrom) {
+    setSeededFrom(profileQuery.data);
+    setForm({
+      name: profileQuery.data.name || "",
+      username: profileQuery.data.username || "",
+      email: profileQuery.data.email || "",
+      phone: profileQuery.data.phone || "",
+    });
+  }
 
   const updateMutation = useMutation({
     mutationFn: updateProfile,
@@ -77,19 +94,8 @@ export function ProfilePage({ onBack }: Props) {
     },
   });
 
-  const logoutMutation = useMutation({
-    mutationFn: logout,
-    onSuccess: () => {
-      clearAuth();
-    },
-  });
-
-  const deleteAccountMutation = useMutation({
-    mutationFn: deleteAccount,
-    onSuccess: () => {
-      clearAuth();
-    },
-  });
+  const logoutMutation = useMutation({ mutationFn: logout, onSuccess: clearAuth });
+  const deleteAccountMutation = useMutation({ mutationFn: deleteAccount, onSuccess: clearAuth });
 
   const hasChanges =
     form.name !== (profileQuery.data?.name || "") ||
@@ -101,156 +107,153 @@ export function ProfilePage({ onBack }: Props) {
     form.name || profileQuery.data?.username || profileQuery.data?.phone || "User";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-3 px-4 pb-3 pt-4">
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
+        <h1 className="flex-1 font-heading text-lg font-semibold tracking-tight">Profile</h1>
         <button
           type="button"
           onClick={onBack}
-          className="rounded-full p-1 text-[#404848] hover:bg-[#DCE9FF]"
+          aria-label="Close"
+          className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-surface-hover hover:text-foreground"
         >
-          <ArrowLeft className="size-5" />
+          <X className="size-5" />
         </button>
-        <h1 className="text-lg font-bold text-[#003535]">Profile</h1>
       </header>
 
-      <div className="flex flex-col gap-6 overflow-y-auto px-4 pb-6">
-        <div className="flex flex-col items-center gap-3 pt-2">
-          <div className="relative">
-            <div className="flex size-24 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#D3E4FE] shadow-lg">
-              <span className="text-2xl font-bold text-[#0B1C30]">{initials(displayName)}</span>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-6 p-5">
+          <div className="flex flex-col items-center gap-2">
+            <UserAvatar name={displayName} seed={authUser?.id} size="xl" />
+            <div className="text-center">
+              <h2 className="font-heading text-lg font-semibold">{displayName}</h2>
+              {profileQuery.data?.username && (
+                <p className="text-sm text-muted-foreground">@{profileQuery.data.username}</p>
+              )}
             </div>
-            <div className="absolute -bottom-1 -right-1 flex size-8 items-center justify-center rounded-full border-2 border-white bg-[#FE6B00] text-white shadow">
-              <Camera className="size-4" />
-            </div>
-          </div>
-          <h2 className="text-xl font-bold text-[#0B1C30]">{displayName}</h2>
-          <p className="-mt-1 text-sm text-[#6B7280]">
-            {profileQuery.data?.username ? `@${profileQuery.data.username}` : ""}
-          </p>
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">
-              FULL NAME
-            </label>
-            <input
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              placeholder="Your full name"
-              className="w-full rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-            />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">
-              USERNAME
-            </label>
-            <input
-              value={form.username}
-              onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
-              placeholder="@username"
-              className="w-full rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">EMAIL</label>
-            <input
-              value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-              placeholder="email@example.com"
-              className="w-full rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-[0.05em] text-[#6B7280]">PHONE</label>
-            <input
-              value={form.phone}
-              onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-              placeholder="+1 234 567 8900"
-              className="w-full rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#0B1C30] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#FE6B00]/30"
-            />
-          </div>
-        </div>
-
-        {updateMutation.isError && (
-          <p className="text-sm text-red-500">
-            {updateMutation.error?.message || "Could not save changes"}
-          </p>
-        )}
-
-        {updateMutation.isSuccess && <p className="text-sm text-emerald-600">Profile updated</p>}
-
-        <button
-          type="button"
-          disabled={!hasChanges || updateMutation.isPending}
-          onClick={() =>
-            updateMutation.mutate({
-              name: form.name.trim() || undefined,
-              username: form.username.trim() || undefined,
-              email: form.email.trim() || undefined,
-              phone: form.phone.trim() || undefined,
-            })
-          }
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#003535] py-3.5 text-sm font-semibold text-white transition hover:bg-[#002828] disabled:opacity-50"
-        >
-          {updateMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Save Changes
-        </button>
-
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => logoutMutation.mutate()}
-            disabled={logoutMutation.isPending}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] bg-white py-3.5 text-sm font-semibold text-[#003535] transition hover:bg-[#F1F4F9]"
-          >
-            {logoutMutation.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <LogOut className="size-4" />
-            )}
-            Logout
-          </button>
-
-          {!deleteConfirm ? (
-            <button
-              type="button"
-              onClick={() => setDeleteConfirm(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white py-3.5 text-sm font-semibold text-red-500 transition hover:bg-red-50"
-            >
-              <Trash2 className="size-4" />
-              Delete Account
-            </button>
-          ) : (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-medium text-red-600">Are you sure?</p>
-              <p className="mt-1 text-xs text-red-500">This action cannot be undone.</p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDeleteConfirm(false)}
-                  className="flex-1 rounded-xl border border-[#E2E8F0] bg-white py-2.5 text-sm font-semibold text-[#404848] transition hover:bg-[#F1F4F9]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={deleteAccountMutation.isPending}
-                  onClick={() => deleteAccountMutation.mutate()}
-                  className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white transition hover:bg-red-600 disabled:opacity-50"
-                >
-                  {deleteAccountMutation.isPending ? (
-                    <Loader2 className="mx-auto size-4 animate-spin" />
-                  ) : (
-                    "Delete"
-                  )}
-                </button>
+          <section className="space-y-3">
+            {FIELDS.map(({ key, label, placeholder, type }) => (
+              <div key={key} className="space-y-1.5">
+                <label htmlFor={key} className="text-xs font-medium text-muted-foreground">
+                  {label}
+                </label>
+                <input
+                  id={key}
+                  type={type}
+                  value={form[key]}
+                  onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
+                  placeholder={placeholder}
+                  className="h-11 w-full rounded-xl border border-border bg-surface-raised px-3.5 text-sm transition placeholder:text-muted-foreground focus:border-accent-500/40 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+                />
               </div>
+            ))}
+
+            {updateMutation.isError && (
+              <p className="text-sm text-destructive">Could not save changes.</p>
+            )}
+            {updateMutation.isSuccess && !hasChanges && (
+              <p className="text-sm text-positive">Profile updated.</p>
+            )}
+
+            <Button
+              size="lg"
+              className="h-11 w-full"
+              disabled={!hasChanges || updateMutation.isPending}
+              onClick={() =>
+                updateMutation.mutate({
+                  name: form.name.trim() || undefined,
+                  username: form.username.trim() || undefined,
+                  email: form.email.trim() || undefined,
+                  phone: form.phone.trim() || undefined,
+                })
+              }
+            >
+              {updateMutation.isPending && <Loader2 className="size-4 animate-spin" />}
+              Save changes
+            </Button>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="text-xs font-medium text-muted-foreground">Appearance</h3>
+            <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-border bg-surface-raised p-1.5">
+              {THEMES.map(({ value, label, icon: Icon }) => {
+                const active = mounted && theme === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTheme(value)}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 rounded-lg py-2.5 text-xs font-medium transition",
+                      active
+                        ? "bg-brand-100 text-brand-800"
+                        : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    {label}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          </section>
+
+          <section className="space-y-2 border-t border-border pt-5">
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 w-full"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+            >
+              {logoutMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <LogOut className="size-4" />
+              )}
+              Log out
+            </Button>
+
+            {!deleteConfirm ? (
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(true)}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-medium text-destructive transition hover:bg-negative-soft"
+              >
+                <Trash2 className="size-4" />
+                Delete account
+              </button>
+            ) : (
+              <div className="rounded-xl border border-destructive/30 bg-negative-soft p-4">
+                <p className="text-sm font-semibold text-destructive">Delete this account?</p>
+                <p className="mt-1 text-xs text-destructive/80">
+                  Your trips, expenses and messages go with it. This can&apos;t be undone.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-10 flex-1"
+                    onClick={() => setDeleteConfirm(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    className="h-10 flex-1"
+                    disabled={deleteAccountMutation.isPending}
+                    onClick={() => deleteAccountMutation.mutate()}
+                  >
+                    {deleteAccountMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      "Delete"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>
