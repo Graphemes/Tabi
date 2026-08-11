@@ -40,7 +40,7 @@ export class GroupsService {
   }
 
   async findAll(userId: number) {
-    return this.prisma.group.findMany({
+    const groups = await this.prisma.group.findMany({
       where: {
         members: { some: { userId } },
       },
@@ -51,8 +51,22 @@ export class GroupsService {
           },
         },
         createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
+        // Newest message per group, so the trip list can show a real preview line
+        // instead of a placeholder.
+        messages: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            sender: { select: { id: true, name: true, username: true, phone: true } },
+          },
+        },
       },
     });
+
+    return groups.map(({ messages, ...group }) => ({
+      ...group,
+      lastMessage: messages[0] ?? null,
+    }));
   }
 
   async updateMemberStatus(
