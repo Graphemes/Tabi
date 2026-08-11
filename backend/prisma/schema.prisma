@@ -113,6 +113,7 @@ model Expense {
 
   participants ExpenseParticipant[]
   items        ExpenseItem[]
+  messages     Message[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -192,6 +193,8 @@ model Message {
   latitude  Float?
   longitude Float?
   mapLabel  String?
+  expenseId Int?
+  expense   Expense?    @relation(fields: [expenseId], references: [id], onDelete: SetNull)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
