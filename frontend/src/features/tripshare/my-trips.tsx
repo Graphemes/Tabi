@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Users, Plus, Archive, RotateCcw, Compass, MapPin, Image as ImageIcon } from "lucide-react";
+import { Search, Users, Plus, Archive, RotateCcw, Compass, MapPin, Image as ImageIcon, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +37,7 @@ function previewOf(message: ApiMessage | null | undefined, selfId?: number) {
       : message.sender?.name || message.sender?.username || "Someone";
   if (message.type === "LOCATION") return { who, body: "shared a location", icon: MapPin };
   if (message.type === "IMAGE") return { who, body: "sent a photo", icon: ImageIcon };
+  if (message.expense) return { who, body: `paid ${Number(message.expense.totalAmount).toLocaleString()} ${message.expense.currency} · ${message.expense.title}`, icon: Receipt };
   return { who, body: message.content ?? "", icon: null };
 }
 

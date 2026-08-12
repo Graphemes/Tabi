@@ -58,6 +58,7 @@ export class GroupsService {
           orderBy: { createdAt: 'desc' },
           include: {
             sender: { select: { id: true, name: true, username: true, phone: true } },
+            expense: { select: { id: true, title: true, totalAmount: true, currency: true } },
           },
         },
       },

@@ -51,6 +51,15 @@ export class MessagesService {
             phone: true,
           },
         },
+        expense: {
+          select: {
+            id: true,
+            title: true,
+            totalAmount: true,
+            currency: true,
+            createdById: true,
+          },
+        },
       },
     });
 
@@ -86,6 +95,15 @@ export class MessagesService {
             username: true,
             name: true,
             phone: true,
+          },
+        },
+        expense: {
+          select: {
+            id: true,
+            title: true,
+            totalAmount: true,
+            currency: true,
+            createdById: true,
           },
         },
       },

@@ -17,5 +17,6 @@ import { RealtimeGateway } from './realtime.gateway';
     LocationModule,
   ],
   providers: [RealtimeGateway],
+  exports: [RealtimeGateway],
 })
 export class RealtimeModule {}
