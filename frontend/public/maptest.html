@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  Standalone MapLibre + MapTiler isolation test. No React, no app code, no auth.
+  Open http://localhost:3000/maptest.html  — ideally in an Incognito window, which
+  disables extensions by default. Delete this file once the map issue is settled.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Map isolation test</title>
+    <link href="https://unpkg.com/maplibre-gl@6/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+      body { margin: 0; font: 13px/1.5 system-ui, sans-serif; }
+      #map { position: absolute; inset: 0 0 190px 0; }
+      #log {
+        position: absolute; inset: auto 0 0 0; height: 190px; overflow: auto;
+        background: #111; color: #ddd; padding: 8px 12px; margin: 0;
+        white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px;
+      }
+      .ok { color: #6ee7a8; } .bad { color: #ff8f8f; } .warn { color: #ffd479; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <pre id="log"></pre>
+
+    <script src="https://unpkg.com/maplibre-gl@6/dist/maplibre-gl.js"></script>
+    <script>
+      const KEY = "JxdAlew1tvYfo0A7qlOd";
+      const logEl = document.getElementById("log");
+      const say = (msg, cls = "") => {
+        logEl.insertAdjacentHTML("beforeend", `<span class="${cls}">${msg}</span>\n`);
+      };
+
+      // 1. Is WebGL actually available in this browser/profile?
+      const gl =
+        document.createElement("canvas").getContext("webgl2") ||
+        document.createElement("canvas").getContext("webgl");
+      if (!gl) {
+        say("✗ WebGL UNAVAILABLE — MapLibre cannot render at all in this browser.", "bad");
+      } else {
+        const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+        say("✓ WebGL available", "ok");
+        if (dbg) say("  renderer: " + gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+      }
+
+      // 2. Do the style and a real tile load from THIS browser (key + origin restriction)?
+      fetch(`https://api.maptiler.com/maps/streets-v2/style.json?key=${KEY}`)
+        .then((r) => say((r.ok ? "✓" : "✗") + " style.json HTTP " + r.status, r.ok ? "ok" : "bad"))
+        .catch((e) => say("✗ style.json fetch failed: " + e.message, "bad"));
+
+      fetch(`https://api.maptiler.com/tiles/v3/14/12374/6987.pbf?key=${KEY}`)
+        .then(async (r) => {
+          const size = (await r.arrayBuffer()).byteLength;
+          say((r.ok ? "✓" : "✗") + ` vector tile HTTP ${r.status} (${size} bytes)`, r.ok ? "ok" : "bad");
+        })
+        .catch((e) => say("✗ tile fetch failed: " + e.message, "bad"));
+
+      // 3. Does MapLibre paint? Any style/tile error surfaces here rather than silently.
+      const map = new maplibregl.Map({
+        container: "map",
+        style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${KEY}`,
+        center: [91.8933, 25.5788], // Shillong
+        zoom: 13,
+      });
+      map.on("load", () => say("✓ map 'load' fired — tiles should be visible above", "ok"));
+      map.on("idle", () => say("✓ map idle (finished rendering)", "ok"));
+      map.on("error", (e) => say("✗ maplibre error: " + (e.error?.message || e), "bad"));
+
+      // 4. Is an extension mutating the DOM? Dark Reader stamps darkreader-* attributes.
+      setTimeout(() => {
+        const touched = document.querySelectorAll("[data-darkreader-inline-stroke], [data-darkreader-inline-fill], [data-darkreader-mode]");
+        const styles = [...document.querySelectorAll("style")].filter((s) =>
+          (s.textContent || "").includes("darkreader"),
+        );
+        if (touched.length || styles.length || document.documentElement.hasAttribute("data-darkreader-mode")) {
+          say(`⚠ DARK READER IS ACTIVE on this page (${touched.length} elements, ${styles.length} injected stylesheets).`, "warn");
+          say("  It overrides theme switching and breaks WebGL map rendering.", "warn");
+          say("  Disable it for localhost, or retry this page in an Incognito window.", "warn");
+        } else {
+          say("✓ no Dark Reader artefacts detected on this page", "ok");
+        }
+      }, 2500);
+    </script>
+  </body>
+</html>

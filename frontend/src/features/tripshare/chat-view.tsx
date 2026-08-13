@@ -54,9 +54,11 @@ type Props = {
   onBack: () => void;
   onAddExpense?: (groupId: number) => void;
   onOpenExpense?: (groupId: number, expenseId: number) => void;
+  /** Tapping the group name in the header opens the trip info sheet, WhatsApp-style. */
+  onOpenInfo?: (groupId: number) => void;
 };
 
-export function ChatView({ group, onBack, onAddExpense, onOpenExpense }: Props) {
+export function ChatView({ group, onBack, onAddExpense, onOpenExpense, onOpenInfo }: Props) {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((s) => s.accessToken);
   const authUser = useAuthStore((s) => s.user);
@@ -221,7 +223,19 @@ export function ChatView({ group, onBack, onAddExpense, onOpenExpense }: Props) 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <ScreenHeader
-        title={group.name}
+        title={
+          onOpenInfo ? (
+            <button
+              type="button"
+              onClick={() => onOpenInfo(group.id)}
+              className="-mx-1 block max-w-full truncate rounded-lg px-1 text-left transition hover:opacity-70"
+            >
+              {group.name}
+            </button>
+          ) : (
+            group.name
+          )
+        }
         subtitle={`${group.members.length} ${group.members.length === 1 ? "member" : "members"}`}
         onBack={onBack}
       />

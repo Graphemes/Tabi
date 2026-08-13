@@ -7,6 +7,7 @@ import { GroupsModule } from './groups/groups.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { MessagesModule } from './messages/messages.module';
 import { LocationModule } from './location/location.module';
+import { PlacesModule } from './places/places.module';
 import { ActivityModule } from './activity/activity.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { FriendsModule } from './friends/friends.module';
@@ -22,6 +23,7 @@ import { UploadsModule } from './uploads/uploads.module';
     ExpensesModule,
     MessagesModule,
     LocationModule,
+    PlacesModule,
     ActivityModule,
     RealtimeModule,
     FriendsModule,

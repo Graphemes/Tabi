@@ -13,6 +13,7 @@ import { MyTrips } from "./my-trips";
 import { ExpensesView } from "./expenses-view";
 import { ExpenseDetail } from "./expense-detail";
 import { MapView } from "./map-view";
+import { MapDetail } from "./map/map-detail";
 import { ChatView } from "./chat-view";
 import { OverlayHost } from "./overlays/overlay-host";
 
@@ -57,6 +58,10 @@ export function AppShell() {
   const expenseGroup = useMemo(
     () => groups.find((g) => g.id === nav.selection.expenses?.groupId) ?? null,
     [groups, nav.selection.expenses],
+  );
+  const mapGroup = useMemo(
+    () => groups.find((g) => g.id === nav.selection.map) ?? null,
+    [groups, nav.selection.map],
   );
 
   const openNewTrip = () => dispatch({ type: "OPEN_OVERLAY", overlay: { kind: "create-group" } });
@@ -112,6 +117,9 @@ export function AppShell() {
                     dispatch({ type: "SELECT_TAB", tab: "expenses" });
                     dispatch({ type: "SELECT_EXPENSE", ref: { groupId, expenseId } });
                   }}
+                  onOpenInfo={(groupId) =>
+                    dispatch({ type: "OPEN_OVERLAY", overlay: { kind: "group-info", groupId } })
+                  }
                 />
               </DetailPane>
             </PaneGroup>
@@ -141,9 +149,29 @@ export function AppShell() {
           )}
 
           {nav.tab === "map" && (
-            <FullPane>
-              <MapView groups={groups} onOpenProfile={openProfile} />
-            </FullPane>
+            <PaneGroup>
+              <ListPane pane={pane}>
+                <MapView
+                  groups={groups}
+                  selectedGroupId={nav.selection.map}
+                  onSelectTrip={(groupId) => dispatch({ type: "SELECT_MAP_TRIP", groupId })}
+                  onOpenProfile={openProfile}
+                />
+              </ListPane>
+              <DetailPane pane={pane}>
+                <MapDetail
+                  // Remount per trip so the draft pin, selection and map instance are
+                  // rebuilt for the new trip rather than reset in an effect.
+                  key={mapGroup?.id ?? "none"}
+                  group={mapGroup}
+                  onBack={back}
+                  onSavePlace={(groupId, draft) =>
+                    dispatch({ type: "OPEN_OVERLAY", overlay: { kind: "save-place", groupId, draft } })
+                  }
+                  onOpenChat={(groupId) => dispatch({ type: "OPEN_TRIP_CHAT", groupId })}
+                />
+              </DetailPane>
+            </PaneGroup>
           )}
         </main>
 

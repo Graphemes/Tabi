@@ -41,7 +41,12 @@ export type ApiGroup = {
     userId: number;
     user: ApiUser;
     status?: string;
+    role?: "ADMIN" | "MEMBER";
+    locationSharingEnabled?: boolean;
   }>;
+  createdById?: number;
+  createdBy?: ApiUser | null;
+  createdAt?: string;
   /** Newest message in the group, for the trip-list preview line. */
   lastMessage?: ApiMessage | null;
   updatedAt: string;
@@ -115,6 +120,20 @@ export const createGroup = async (payload: { name: string }) => {
   return data;
 };
 
+export const getGroup = async (groupId: number) => {
+  const { data } = await http.get<ApiGroup>(`/groups/${groupId}`);
+  return data;
+};
+
+/** Admin-only on the backend (`ensureAdmin`); non-admins get a 403. */
+export const updateGroup = async (
+  groupId: number,
+  payload: { name?: string; description?: string },
+) => {
+  const { data } = await http.patch<ApiGroup>(`/groups/${groupId}`, payload);
+  return data;
+};
+
 export const addGroupMember = async (groupId: number, userId: number) => {
   const { data } = await http.post(`/groups/${groupId}/members`, { userId });
   return data;
@@ -143,6 +162,85 @@ export const sendLocationMessage = async (
   payload: { latitude: number; longitude: number },
 ) => {
   const { data } = await http.post<ApiMessage>(`/groups/${groupId}/location/message`, payload);
+  return data;
+};
+
+export type ApiSavedPlace = {
+  id: number;
+  groupId: number;
+  createdById: number;
+  name: string;
+  note?: string | null;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  externalId?: string | null;
+  createdAt: string;
+  createdBy?: ApiUser | null;
+};
+
+export type ApiLiveLocation = {
+  id: number;
+  groupId: number;
+  userId: number;
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+  sharedAt: string;
+  user?: ApiUser | null;
+};
+
+export const listGroupPlaces = async (groupId: number) => {
+  const { data } = await http.get<ApiSavedPlace[]>(`/groups/${groupId}/places`);
+  return data;
+};
+
+export const createPlace = async (
+  groupId: number,
+  payload: {
+    name: string;
+    note?: string;
+    address?: string;
+    latitude: number;
+    longitude: number;
+    externalId?: string;
+  },
+) => {
+  const { data } = await http.post<ApiSavedPlace>(`/groups/${groupId}/places`, payload);
+  return data;
+};
+
+export const updatePlace = async (
+  groupId: number,
+  placeId: number,
+  payload: { name?: string; note?: string },
+) => {
+  const { data } = await http.patch<ApiSavedPlace>(
+    `/groups/${groupId}/places/${placeId}`,
+    payload,
+  );
+  return data;
+};
+
+export const deletePlace = async (groupId: number, placeId: number) => {
+  const { data } = await http.delete(`/groups/${groupId}/places/${placeId}`);
+  return data;
+};
+
+export const sharePlace = async (groupId: number, placeId: number) => {
+  const { data } = await http.post<ApiMessage>(
+    `/groups/${groupId}/places/${placeId}/share`,
+  );
+  return data;
+};
+
+export const listLiveLocations = async (groupId: number) => {
+  const { data } = await http.get<ApiLiveLocation[]>(`/groups/${groupId}/location/live`);
+  return data;
+};
+
+export const setLocationSharing = async (groupId: number, enabled: boolean) => {
+  const { data } = await http.patch(`/groups/${groupId}/location/sharing`, { enabled });
   return data;
 };
 

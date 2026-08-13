@@ -2,12 +2,25 @@ import type { TabId } from "../types";
 
 export type ExpenseRef = { groupId: number; expenseId: number };
 
+/** A pin that isn't saved yet — from a search hit, or dropped by hand on the map. */
+export type PlaceDraft = {
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+  externalId?: string;
+};
+
 export type Overlay =
   | { kind: "create-group" }
   | { kind: "profile" }
   // Carries its own groupId rather than reading `selection` — otherwise opening
   // "add expense" from the Expenses tab would silently repoint the open chat.
-  | { kind: "add-expense"; groupId: number };
+  | { kind: "add-expense"; groupId: number }
+  // Same reasoning: the draft travels with the overlay so closing and reopening
+  // the map tab can't hand the form a stale pin.
+  | { kind: "save-place"; groupId: number; draft: PlaceDraft }
+  | { kind: "group-info"; groupId: number };
 
 export type NavState = {
   tab: TabId;
@@ -37,6 +50,8 @@ export type NavAction =
   /** Cross-tab jump: open a trip's chat from the Groups tab. */
   | { type: "OPEN_TRIP_CHAT"; groupId: number }
   | { type: "SELECT_EXPENSE"; ref: ExpenseRef }
+  /** Pick which trip's map to show, from the Map tab's own list pane. */
+  | { type: "SELECT_MAP_TRIP"; groupId: number }
   | { type: "BACK" }
   | { type: "OPEN_OVERLAY"; overlay: Overlay }
   | { type: "CLOSE_OVERLAY" };
@@ -66,6 +81,13 @@ export function navReducer(state: NavState, action: NavAction): NavState {
         ...state,
         selection: { ...state.selection, expenses: action.ref },
         pane: { ...state.pane, expenses: "detail" },
+      };
+
+    case "SELECT_MAP_TRIP":
+      return {
+        ...state,
+        selection: { ...state.selection, map: action.groupId },
+        pane: { ...state.pane, map: "detail" },
       };
 
     case "BACK":
