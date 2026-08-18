@@ -67,7 +67,9 @@ export function PlaceSearch({
           onFocus={() => setOpen(true)}
           placeholder="Search for a place"
           aria-label="Search for a place"
-          className="h-10 rounded-xl bg-surface-raised pr-9 pl-9 shadow-card"
+          // Sits on top of the map, so it needs an opaque background and a real border —
+          // the default translucent input disappeared against the tiles.
+          className="h-11 rounded-xl border-border bg-surface-raised pr-9 pl-9 text-foreground shadow-overlay ring-1 ring-black/5 dark:bg-surface-raised dark:ring-white/10"
         />
         {isFetching ?
           <Loader2 className="absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
@@ -88,7 +90,7 @@ export function PlaceSearch({
       </div>
 
       {showPanel && (
-        <ul className="absolute inset-x-0 top-full z-20 mt-1.5 max-h-72 overflow-y-auto rounded-xl border border-border bg-surface-raised py-1 shadow-card">
+        <ul className="absolute inset-x-0 top-full z-20 mt-1.5 max-h-72 overflow-y-auto rounded-xl border border-border bg-surface-raised py-1 shadow-overlay">
           {isError ?
             <li className="px-3 py-2.5 text-xs text-muted-foreground">
               Couldn&apos;t reach the search service. Try again.

@@ -5,21 +5,23 @@ import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
+  Flag,
   Loader2,
   Map as MapIcon,
   MapPin,
   Navigation,
+  PlayCircle,
   Send,
   Trash2,
   X,
 } from "lucide-react";
 import { ScreenHeader } from "@/components/app/screen-header";
 import { EmptyState } from "@/components/app/empty-state";
-import { UserAvatar } from "@/components/app/user-avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { getSocket } from "@/lib/socket";
 import { googleMapsLink, isMapConfigured, type PlaceHit } from "@/lib/maptiler";
+import { pathLengthKm, shortestPath } from "@/lib/route-order";
 import { useAuthStore } from "@/store/auth-store";
 import {
   deletePlace,
@@ -112,14 +114,41 @@ export function MapDetail({
     };
   }, [accessToken, groupId, queryClient]);
 
+  const startPlace = useMemo(
+    () => places.find((place) => place.kind === "START") ?? null,
+    [places],
+  );
+
+  // Visit order is computed, not the order things were added: shortest path across the
+  // start, every destination and every stop. See lib/route-order.ts.
+  const itinerary = useMemo(
+    () =>
+      shortestPath(startPlace, places),
+    [places, startPlace],
+  );
+
+  const route = useMemo<[number, number][]>(
+    () => itinerary.map((place) => [place.longitude, place.latitude]),
+    [itinerary],
+  );
+
+  const routeKm = useMemo(() => pathLengthKm(itinerary), [itinerary]);
+
   const markers = useMemo<MapMarker[]>(() => {
-    const saved = places.map<MapMarker>((place) => ({
-      id: `saved:${place.id}`,
-      latitude: place.latitude,
-      longitude: place.longitude,
-      kind: "saved",
-      label: place.name,
-    }));
+    let stepCount = 0;
+    const saved = itinerary.map<MapMarker>((place) => {
+      const isStart = place.kind === "START";
+      const isStop = place.kind === "STOP";
+      if (!isStart && !isStop) stepCount += 1;
+      return {
+        id: `saved:${place.id}`,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        kind: isStart ? "start" : isStop ? "stop" : "destination",
+        label: place.name,
+        order: !isStart && !isStop ? stepCount : undefined,
+      };
+    });
 
     const members = liveLocations.map<MapMarker>((loc) => ({
       id: `member:${loc.userId}`,
@@ -142,9 +171,23 @@ export function MapDetail({
           },
         ]
       : [...saved, ...members];
-  }, [places, liveLocations, draft]);
+  }, [itinerary, liveLocations, draft]);
 
   const selectedPlace = places.find((place) => place.id === selectedPlaceId) ?? null;
+
+  // Mirrors the backend's duplicate rule (same provider POI, or within ~11m) so the
+  // button reads "Already added" instead of the save failing with a 409.
+  const draftDuplicate = useMemo(() => {
+    if (!draft) return null;
+    return (
+      places.find(
+        (place) =>
+          (draft.externalId && place.externalId === draft.externalId) ||
+          (Math.abs(place.latitude - draft.latitude) <= 0.0001 &&
+            Math.abs(place.longitude - draft.longitude) <= 0.0001),
+      ) ?? null
+    );
+  }, [draft, places]);
 
   const shareToChat = useMutation({
     mutationFn: (placeId: number) => sharePlace(groupId!, placeId),
@@ -256,6 +299,7 @@ export function MapDetail({
       <div className="relative min-h-0 flex-1">
         <MapCanvas
           markers={markers}
+          route={route}
           center={center}
           onMapClick={(latitude, longitude) => {
             setSelectedPlaceId(null);
@@ -287,9 +331,18 @@ export function MapDetail({
                   {draft.address || `${draft.latitude.toFixed(5)}, ${draft.longitude.toFixed(5)}`}
                 </p>
               </div>
-              <Button size="sm" onClick={() => onSavePlace(group.id, draft)}>
-                Save
-              </Button>
+              {draftDuplicate ? (
+                <span
+                  title={`"${draftDuplicate.name}" is already saved to this trip`}
+                  className="shrink-0 rounded-lg bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground"
+                >
+                  Already added
+                </span>
+              ) : (
+                <Button size="sm" onClick={() => onSavePlace(group.id, draft)}>
+                  Save
+                </Button>
+              )}
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -349,17 +402,17 @@ export function MapDetail({
                   <ExternalLink />
                   Directions
                 </a>
-                {selectedPlace.createdById === authUserId && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => removePlace.mutate(selectedPlace.id)}
-                    disabled={removePlace.isPending}
-                  >
-                    {removePlace.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                    Delete
-                  </Button>
-                )}
+                {/* Saved places belong to the trip, not the person who pinned them, so
+                    any member can remove one — same rule the backend enforces. */}
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => removePlace.mutate(selectedPlace.id)}
+                  disabled={removePlace.isPending}
+                >
+                  {removePlace.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                  Delete
+                </Button>
               </div>
             </div>
           </div>
@@ -369,7 +422,12 @@ export function MapDetail({
       <div className="max-h-56 shrink-0 overflow-y-auto border-t border-border bg-surface">
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Saved places
+            Route
+            {itinerary.length > 1 && (
+              <span className="ml-2 font-normal normal-case">
+                {itinerary.length} stops · {routeKm.toFixed(0)} km
+              </span>
+            )}
           </h2>
           <button
             type="button"
@@ -387,14 +445,16 @@ export function MapDetail({
           </p>
         )}
 
-        {places.length === 0 ? (
+        {itinerary.length === 0 ? (
           <p className="px-4 py-4 text-xs text-muted-foreground">
             Search for a place or long-press the map to drop a pin, then save it here.
+            Your first pin sets the trip&apos;s starting point.
           </p>
         ) : (
+          // Listed in computed visit order, matching the numbers on the map.
           <ul className="space-y-1 p-2">
-            {places.map((place) => (
-              <li key={place.id}>
+            {itinerary.map((place) => (
+              <li key={place.id} className="group/place flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -402,19 +462,51 @@ export function MapDetail({
                     setSelectedPlaceId(place.id);
                     setCenter([place.longitude, place.latitude]);
                   }}
-                  className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-surface-hover"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-surface-hover"
                 >
-                  <UserAvatar
-                    name={place.createdBy?.name || place.createdBy?.username || "?"}
-                    seed={place.createdById}
-                    size="sm"
-                  />
+                  {place.kind === "START" ? (
+                    <span
+                      title="Starting point"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-positive-soft text-positive"
+                    >
+                      <PlayCircle className="size-4" />
+                    </span>
+                  ) : place.kind === "STOP" ? (
+                    <span
+                      title="Stop"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700"
+                    >
+                      <MapPin className="size-4" />
+                    </span>
+                  ) : (
+                    <span
+                      title="Destination"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive"
+                    >
+                      <Flag className="size-4" />
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{place.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {place.note || place.address || "Saved pin"}
+                      {place.kind === "START"
+                        ? "Starting point"
+                        : place.kind === "STOP"
+                          ? "Stop"
+                          : "Destination"}
+                      {(place.note || place.address) && ` · ${place.note || place.address}`}
                     </span>
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removePlace.mutate(place.id)}
+                  disabled={removePlace.isPending}
+                  aria-label={`Delete ${place.name}`}
+                  title={`Delete ${place.name}`}
+                  className="shrink-0 rounded-lg p-2 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-40 group-hover/place:opacity-100"
+                >
+                  <Trash2 className="size-4" />
                 </button>
               </li>
             ))}

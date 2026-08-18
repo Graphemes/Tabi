@@ -28,9 +28,9 @@ export type NavState = {
   pane: Record<TabId, "list" | "detail">;
   /** Per-tab selection — never cleared by a tab switch, so desktop keeps both panes. */
   selection: {
-    chat: number | null;
-    expenses: ExpenseRef | null;
+    /** Trips tab: the trip whose chat is open in the detail pane. */
     groups: number | null;
+    expenses: ExpenseRef | null;
     map: number | null;
   };
   overlay: Overlay | null;
@@ -38,16 +38,14 @@ export type NavState = {
 
 export const initialNavState: NavState = {
   tab: "groups",
-  pane: { groups: "list", expenses: "list", map: "list", chat: "list" },
-  selection: { chat: null, expenses: null, groups: null, map: null },
+  pane: { groups: "list", expenses: "list", map: "list" },
+  selection: { groups: null, expenses: null, map: null },
   overlay: null,
 };
 
 export type NavAction =
   | { type: "SELECT_TAB"; tab: TabId }
-  /** Pick a conversation from within the chat tab's own list pane. */
-  | { type: "SELECT_CHAT"; groupId: number }
-  /** Cross-tab jump: open a trip's chat from the Groups tab. */
+  /** Open a trip's chat in the Trips tab detail pane. */
   | { type: "OPEN_TRIP_CHAT"; groupId: number }
   | { type: "SELECT_EXPENSE"; ref: ExpenseRef }
   /** Pick which trip's map to show, from the Map tab's own list pane. */
@@ -61,19 +59,12 @@ export function navReducer(state: NavState, action: NavAction): NavState {
     case "SELECT_TAB":
       return { ...state, tab: action.tab };
 
-    case "SELECT_CHAT":
-      return {
-        ...state,
-        selection: { ...state.selection, chat: action.groupId },
-        pane: { ...state.pane, chat: "detail" },
-      };
-
     case "OPEN_TRIP_CHAT":
       return {
         ...state,
-        tab: "chat",
-        selection: { ...state.selection, chat: action.groupId },
-        pane: { ...state.pane, chat: "detail" },
+        tab: "groups",
+        selection: { ...state.selection, groups: action.groupId },
+        pane: { ...state.pane, groups: "detail" },
       };
 
     case "SELECT_EXPENSE":

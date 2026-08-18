@@ -12,4 +12,5 @@ export type Trip = {
 
 export type FilterChip = "All Trips" | "Active" | "Pending" | "Archived";
 
-export type TabId = "groups" | "expenses" | "map" | "chat";
+/** The Trips tab owns the chat: selecting a trip opens its conversation in the detail pane. */
+export type TabId = "groups" | "expenses" | "map";

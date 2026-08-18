@@ -8,7 +8,7 @@ import { getGroups, type ApiMessage, type ApiGroup } from "@/features/whatsapp/a
 import { useNav } from "./navigation/nav-context";
 import { SidebarNav } from "./navigation/sidebar-nav";
 import { BottomNav } from "./navigation/bottom-nav";
-import { PaneGroup, ListPane, DetailPane, FullPane } from "./layout/pane-group";
+import { PaneGroup, ListPane, DetailPane } from "./layout/pane-group";
 import { MyTrips } from "./my-trips";
 import { ExpensesView } from "./expenses-view";
 import { ExpenseDetail } from "./expense-detail";
@@ -52,8 +52,8 @@ export function AppShell() {
 
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const chatGroup = useMemo(
-    () => groups.find((g) => g.id === nav.selection.chat) ?? null,
-    [groups, nav.selection.chat],
+    () => groups.find((g) => g.id === nav.selection.groups) ?? null,
+    [groups, nav.selection.groups],
   );
   const expenseGroup = useMemo(
     () => groups.find((g) => g.id === nav.selection.expenses?.groupId) ?? null,
@@ -80,28 +80,16 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <main className="flex min-h-0 flex-1 flex-col">
+          {/* Trips owns the chat: picking a trip opens its conversation in the detail
+              pane, so there is no separate Chat tab to keep in sync. */}
           {nav.tab === "groups" && (
-            <FullPane>
-              <MyTrips
-                groups={groups}
-                isLoading={groupsQuery.isPending}
-                selectedGroupId={null}
-                onSelectGroup={(groupId) => dispatch({ type: "OPEN_TRIP_CHAT", groupId })}
-                onNewTrip={openNewTrip}
-                onOpenProfile={openProfile}
-              />
-            </FullPane>
-          )}
-
-          {nav.tab === "chat" && (
             <PaneGroup>
               <ListPane pane={pane}>
                 <MyTrips
-                  variant="compact"
                   groups={groups}
                   isLoading={groupsQuery.isPending}
-                  selectedGroupId={nav.selection.chat}
-                  onSelectGroup={(groupId) => dispatch({ type: "SELECT_CHAT", groupId })}
+                  selectedGroupId={nav.selection.groups}
+                  onSelectGroup={(groupId) => dispatch({ type: "OPEN_TRIP_CHAT", groupId })}
                   onNewTrip={openNewTrip}
                   onOpenProfile={openProfile}
                 />

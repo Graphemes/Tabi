@@ -228,6 +228,8 @@ model SavedPlace {
   createdById Int
   createdBy   User     @relation("PlaceCreator", fields: [createdById], references: [id])
   name        String
+  /// DESTINATION = somewhere the trip is going; STOP = a waypoint along the way.
+  kind        PlaceKind @default(DESTINATION)
   note        String?
   address     String?
   latitude    Float
@@ -321,6 +323,13 @@ enum SettlementStatus {
   PENDING
   COMPLETED
   CANCELLED
+}
+
+enum PlaceKind {
+  /// Where the trip begins. At most one per trip — the route is anchored here.
+  START
+  DESTINATION
+  STOP
 }
 
 enum ExpenseStatus {

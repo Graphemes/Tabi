@@ -165,11 +165,18 @@ export const sendLocationMessage = async (
   return data;
 };
 
+/**
+ * START = where the trip begins (at most one per trip, enforced by the backend);
+ * DESTINATION = somewhere the trip is going; STOP = a waypoint along the way.
+ */
+export type PlaceKind = "START" | "DESTINATION" | "STOP";
+
 export type ApiSavedPlace = {
   id: number;
   groupId: number;
   createdById: number;
   name: string;
+  kind: PlaceKind;
   note?: string | null;
   address?: string | null;
   latitude: number;
@@ -199,6 +206,7 @@ export const createPlace = async (
   groupId: number,
   payload: {
     name: string;
+    kind?: PlaceKind;
     note?: string;
     address?: string;
     latitude: number;
@@ -213,7 +221,7 @@ export const createPlace = async (
 export const updatePlace = async (
   groupId: number,
   placeId: number,
-  payload: { name?: string; note?: string },
+  payload: { name?: string; note?: string; kind?: PlaceKind },
 ) => {
   const { data } = await http.patch<ApiSavedPlace>(
     `/groups/${groupId}/places/${placeId}`,

@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { MessageType } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { MessageType, PlaceKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupAccessService } from '../groups/group-access.service';
 import { ActivityService } from '../activity/activity.service';
@@ -27,11 +27,23 @@ export class PlacesService {
   async create(groupId: number, userId: number, dto: CreatePlaceDto) {
     await this.groupAccessService.ensureMember(groupId, userId);
 
+    const duplicate = await this.findDuplicate(groupId, dto);
+    if (duplicate) {
+      throw new ConflictException(
+        `"${duplicate.name}" is already saved to this trip`,
+      );
+    }
+
+    if (dto.kind === PlaceKind.START) {
+      await this.ensureNoOtherStart(groupId);
+    }
+
     const place = await this.prisma.savedPlace.create({
       data: {
         groupId,
         createdById: userId,
         name: dto.name,
+        kind: dto.kind,
         note: dto.note,
         address: dto.address,
         latitude: dto.latitude,
@@ -74,11 +86,16 @@ export class PlacesService {
     await this.groupAccessService.ensureMember(groupId, userId);
     await this.findInGroup(groupId, placeId);
 
+    if (dto.kind === PlaceKind.START) {
+      await this.ensureNoOtherStart(groupId, placeId);
+    }
+
     const place = await this.prisma.savedPlace.update({
       where: { id: placeId },
       data: {
         ...(dto.name === undefined ? {} : { name: dto.name }),
         ...(dto.note === undefined ? {} : { note: dto.note }),
+        ...(dto.kind === undefined ? {} : { kind: dto.kind }),
       },
       include: { createdBy: CREATOR_SELECT },
     });
@@ -137,6 +154,49 @@ export class PlacesService {
       .emit('message:new', message);
 
     return message;
+  }
+
+  /**
+   * A trip has exactly one starting point, because the route is anchored there.
+   * Promoting a second one is rejected rather than silently reordering the trip.
+   */
+  private async ensureNoOtherStart(groupId: number, exceptPlaceId?: number) {
+    const existing = await this.prisma.savedPlace.findFirst({
+      where: {
+        groupId,
+        kind: PlaceKind.START,
+        ...(exceptPlaceId ? { id: { not: exceptPlaceId } } : {}),
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        `"${existing.name}" is already the starting point for this trip`,
+      );
+    }
+  }
+
+  /**
+   * A place counts as already saved if it's the same provider POI, or sits within
+   * ~11m of an existing pin. Coordinates are floats, so an exact match is unreliable —
+   * the same search hit can round differently between clients.
+   */
+  private async findDuplicate(groupId: number, dto: CreatePlaceDto) {
+    if (dto.externalId) {
+      const byExternalId = await this.prisma.savedPlace.findFirst({
+        where: { groupId, externalId: dto.externalId },
+      });
+      if (byExternalId) return byExternalId;
+    }
+
+    const EPSILON = 0.0001;
+    return this.prisma.savedPlace.findFirst({
+      where: {
+        groupId,
+        latitude: { gte: dto.latitude - EPSILON, lte: dto.latitude + EPSILON },
+        longitude: { gte: dto.longitude - EPSILON, lte: dto.longitude + EPSILON },
+      },
+    });
   }
 
   /** Guards against a place id from another group being used under this group's path. */

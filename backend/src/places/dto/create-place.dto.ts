@@ -1,4 +1,6 @@
+import { PlaceKind } from '@prisma/client';
 import {
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -11,6 +13,11 @@ export class CreatePlaceDto {
   @IsString()
   @MaxLength(120)
   name: string;
+
+  /** DESTINATION = somewhere the trip is going; STOP = a waypoint along the way. */
+  @IsOptional()
+  @IsEnum(PlaceKind)
+  kind?: PlaceKind;
 
   @IsOptional()
   @IsString()

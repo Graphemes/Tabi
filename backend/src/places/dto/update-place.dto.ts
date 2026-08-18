@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { PlaceKind } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdatePlaceDto {
   @IsOptional()
@@ -10,4 +11,8 @@ export class UpdatePlaceDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @IsOptional()
+  @IsEnum(PlaceKind)
+  kind?: PlaceKind;
 }

@@ -5,6 +5,8 @@ import { useTheme } from "next-themes";
 // maplibre-gl v6 ships named exports only — there is no default export to import.
 import {
   GeolocateControl,
+  LngLatBounds,
+  type GeoJSONSource,
   MapLibreMap,
   Marker,
   NavigationControl,
@@ -32,19 +34,78 @@ export type MapMarker = {
   id: string;
   latitude: number;
   longitude: number;
-  kind: "saved" | "member" | "draft";
+  kind: "start" | "destination" | "stop" | "member" | "draft";
   label: string;
+  /** 1-based position along the route, shown inside destination pins. */
+  order?: number;
 };
 
 /** Fallback view when we have neither saved places nor a live position: roughly world-centred. */
 const FALLBACK_CENTER: [number, number] = [78.9629, 20.5937];
 const LONG_PRESS_MS = 500;
 
+/** Stable identity so a default-valued prop doesn't retrigger the route effect. */
+const EMPTY_ROUTE: [number, number][] = [];
+
+const ROUTE_SOURCE = "trip-route";
+const ROUTE_COLOR = "#e5484d";
+
 const MARKER_COLORS: Record<MapMarker["kind"], string> = {
-  saved: "#1f6f5c",
+  start: "#0f7b46",
+  destination: "#e5484d",
+  stop: "#1f6f5c",
   member: "#3b6ef5",
   draft: "#8a8a8a",
 };
+
+/**
+ * Markers are plain DOM, so each kind gets its own shape rather than MapLibre's single
+ * default pin: the start is a green flag, destinations are numbered teardrops (they carry
+ * the route order), stops are small circles, members/drafts are dots.
+ */
+function buildMarkerElement(marker: MapMarker): HTMLElement {
+  const el = document.createElement("div");
+  const color = MARKER_COLORS[marker.kind];
+  el.style.cursor = "pointer";
+  el.title = marker.label;
+
+  if (marker.kind === "start") {
+    el.innerHTML = `
+      <svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="9" cy="30" r="4.5" fill="${color}" stroke="#fff" stroke-width="2"/>
+        <path d="M9 29V5" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M9 5h15l-4 5.5 4 5.5H9z" fill="${color}" stroke="#fff" stroke-width="2"
+              stroke-linejoin="round"/>
+      </svg>`;
+    return el;
+  }
+
+  if (marker.kind === "destination") {
+    el.innerHTML = `
+      <svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
+        <path d="M15 39C15 39 28 24.4 28 14.5 28 6.5 22.2 1 15 1S2 6.5 2 14.5C2 24.4 15 39 15 39z"
+              fill="${color}" stroke="#fff" stroke-width="2"/>
+        <text x="15" y="19" text-anchor="middle" font-size="13" font-weight="700"
+              font-family="system-ui, sans-serif" fill="#fff">${marker.order ?? ""}</text>
+      </svg>`;
+    return el;
+  }
+
+  if (marker.kind === "stop") {
+    el.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="10" cy="10" r="7" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+      </svg>`;
+    return el;
+  }
+
+  el.innerHTML = `
+    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="9" cy="9" r="6" fill="${color}" stroke="#fff" stroke-width="2.5"
+              ${marker.kind === "draft" ? 'stroke-dasharray="3 2"' : ""}/>
+    </svg>`;
+  return el;
+}
 
 /**
  * MapLibre wrapper. Must be loaded with `next/dynamic({ ssr: false })` — maplibre-gl
@@ -52,12 +113,15 @@ const MARKER_COLORS: Record<MapMarker["kind"], string> = {
  */
 export function MapCanvas({
   markers,
+  route = EMPTY_ROUTE,
   center,
   onMapClick,
   onMarkerClick,
   onViewCenterChange,
 }: {
   markers: MapMarker[];
+  /** [lng, lat] pairs, in visit order, drawn as the trip route. */
+  route?: [number, number][];
   /** [lng, lat] the map should fly to when it changes. */
   center?: [number, number] | null;
   onMapClick?: (latitude: number, longitude: number) => void;
@@ -67,7 +131,7 @@ export function MapCanvas({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markersRef = useRef(new Map<string, Marker>());
+  const markersRef = useRef(new Map<string, { marker: Marker; signature: string }>());
 
   // `resolvedTheme` collapses "system" to the concrete light/dark actually rendering.
   const { resolvedTheme } = useTheme();
@@ -166,11 +230,16 @@ export function MapCanvas({
     const map = mapRef.current;
     if (!map) return;
 
-    const next = new Set(markers.map((marker) => marker.id));
+    // The icon is baked into the marker's DOM element, so a change of kind, order or
+    // label can't be patched in place — it has to be rebuilt. Position-only changes
+    // still reuse the existing marker.
+    const signature = (m: MapMarker) => `${m.kind}|${m.order ?? ""}|${m.label}`;
+    const next = new Map(markers.map((marker) => [marker.id, marker]));
 
-    for (const [id, marker] of markersRef.current) {
-      if (!next.has(id)) {
-        marker.remove();
+    for (const [id, entry] of markersRef.current) {
+      const incoming = next.get(id);
+      if (!incoming || entry.signature !== signature(incoming)) {
+        entry.marker.remove();
         markersRef.current.delete(id);
       }
     }
@@ -178,12 +247,11 @@ export function MapCanvas({
     for (const marker of markers) {
       const existing = markersRef.current.get(marker.id);
       if (existing) {
-        existing.setLngLat([marker.longitude, marker.latitude]);
-        existing.setPopup(new Popup({ offset: 24 }).setText(marker.label));
+        existing.marker.setLngLat([marker.longitude, marker.latitude]);
         continue;
       }
 
-      const instance = new Marker({ color: MARKER_COLORS[marker.kind] })
+      const instance = new Marker({ element: buildMarkerElement(marker) })
         .setLngLat([marker.longitude, marker.latitude])
         .setPopup(new Popup({ offset: 24 }).setText(marker.label))
         .addTo(map);
@@ -195,7 +263,10 @@ export function MapCanvas({
         markerClickRef.current?.(marker.id);
       });
 
-      markersRef.current.set(marker.id, instance);
+      markersRef.current.set(marker.id, {
+        marker: instance,
+        signature: signature(marker),
+      });
     }
   }, [markers]);
 
@@ -203,6 +274,104 @@ export function MapCanvas({
     if (!center || !mapRef.current) return;
     mapRef.current.flyTo({ center, zoom: 14, essential: true });
   }, [center]);
+
+  // Route line through the trip's places, in the order they were added.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: route.map((point) => [point[0], point[1]]),
+      },
+    };
+
+    const draw = () => {
+      const existing = map.getSource(ROUTE_SOURCE);
+      if (existing) {
+        (existing as GeoJSONSource).setData(geojson);
+        return;
+      }
+
+      map.addSource(ROUTE_SOURCE, { type: "geojson", data: geojson });
+      // Casing underneath keeps the line readable over both light and dark tiles.
+      map.addLayer({
+        id: `${ROUTE_SOURCE}-casing`,
+        type: "line",
+        source: ROUTE_SOURCE,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.7 },
+      });
+      map.addLayer({
+        id: `${ROUTE_SOURCE}-line`,
+        type: "line",
+        source: ROUTE_SOURCE,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": ROUTE_COLOR, "line-width": 3.5 },
+      });
+    };
+
+    // `setStyle` (theme swap) discards custom sources and layers, so redraw on every
+    // styledata event rather than only once.
+    if (map.isStyleLoaded()) draw();
+    map.on("styledata", draw);
+    return () => {
+      map.off("styledata", draw);
+    };
+  }, [route]);
+
+  // First meaningful view: frame everything the trip has (saved places + members)
+  // rather than opening on the whole world. Runs once, and only when the map has
+  // finished loading — fitBounds before "load" is ignored.
+  const framedRef = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || framedRef.current || center || markers.length === 0) return;
+    framedRef.current = true;
+
+    const frame = () => {
+      if (markers.length === 1) {
+        map.jumpTo({ center: [markers[0].longitude, markers[0].latitude], zoom: 14 });
+        return;
+      }
+      const bounds = new LngLatBounds();
+      markers.forEach((m) => bounds.extend([m.longitude, m.latitude]));
+      map.fitBounds(bounds, { padding: 64, maxZoom: 15, animate: false });
+    };
+
+    if (map.isStyleLoaded()) frame();
+    else map.once("load", frame);
+  }, [markers, center]);
+
+  // Nothing pinned yet: centre on the user instead of the world — but only if location
+  // permission was already granted, so opening the map never triggers a cold prompt.
+  useEffect(() => {
+    if (framedRef.current || center || markers.length > 0) return;
+    if (!navigator.permissions?.query) return;
+
+    let cancelled = false;
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((status) => {
+        if (cancelled || status.state !== "granted") return;
+        navigator.geolocation.getCurrentPosition((pos) => {
+          if (cancelled || framedRef.current) return;
+          framedRef.current = true;
+          mapRef.current?.jumpTo({
+            center: [pos.coords.longitude, pos.coords.latitude],
+            zoom: 13,
+          });
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [markers.length, center]);
 
   // Swap tiles when the app theme changes. `setStyle` keeps camera position and leaves
   // Marker instances alone (they're DOM overlays, not style layers), so pins survive.
