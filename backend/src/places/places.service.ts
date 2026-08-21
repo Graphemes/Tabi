@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { MessageType, PlaceKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupAccessService } from '../groups/group-access.service';
@@ -34,8 +38,8 @@ export class PlacesService {
       );
     }
 
-    if (dto.kind === PlaceKind.START) {
-      await this.ensureNoOtherStart(groupId);
+    if (dto.kind === PlaceKind.START || dto.kind === PlaceKind.DESTINATION) {
+      await this.ensureSingle(groupId, dto.kind);
     }
 
     const place = await this.prisma.savedPlace.create({
@@ -86,8 +90,8 @@ export class PlacesService {
     await this.groupAccessService.ensureMember(groupId, userId);
     await this.findInGroup(groupId, placeId);
 
-    if (dto.kind === PlaceKind.START) {
-      await this.ensureNoOtherStart(groupId, placeId);
+    if (dto.kind === PlaceKind.START || dto.kind === PlaceKind.DESTINATION) {
+      await this.ensureSingle(groupId, dto.kind, placeId);
     }
 
     const place = await this.prisma.savedPlace.update({
@@ -157,23 +161,30 @@ export class PlacesService {
   }
 
   /**
-   * A trip has exactly one starting point, because the route is anchored there.
-   * Promoting a second one is rejected rather than silently reordering the trip.
+   * A trip runs from one source to one destination, with any number of stops in
+   * between — both ends anchor the route, so a second of either is rejected rather
+   * than silently reordering the trip. Everything else is a STOP.
    */
-  private async ensureNoOtherStart(groupId: number, exceptPlaceId?: number) {
+  private async ensureSingle(
+    groupId: number,
+    kind: Extract<PlaceKind, 'START' | 'DESTINATION'>,
+    exceptPlaceId?: number,
+  ) {
     const existing = await this.prisma.savedPlace.findFirst({
       where: {
         groupId,
-        kind: PlaceKind.START,
+        kind,
         ...(exceptPlaceId ? { id: { not: exceptPlaceId } } : {}),
       },
     });
 
-    if (existing) {
-      throw new ConflictException(
-        `"${existing.name}" is already the starting point for this trip`,
-      );
-    }
+    if (!existing) return;
+
+    throw new ConflictException(
+      kind === PlaceKind.START
+        ? `"${existing.name}" is already the starting point for this trip`
+        : `"${existing.name}" is already the destination for this trip`,
+    );
   }
 
   /**
@@ -194,7 +205,10 @@ export class PlacesService {
       where: {
         groupId,
         latitude: { gte: dto.latitude - EPSILON, lte: dto.latitude + EPSILON },
-        longitude: { gte: dto.longitude - EPSILON, lte: dto.longitude + EPSILON },
+        longitude: {
+          gte: dto.longitude - EPSILON,
+          lte: dto.longitude + EPSILON,
+        },
       },
     });
   }

@@ -22,6 +22,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return null;
     }
 
-    return { userId: user.id, email: user.email ?? undefined, username: user.username ?? undefined };
+    return {
+      userId: user.id,
+      email: user.email ?? undefined,
+      username: user.username ?? undefined,
+    };
   }
 }

@@ -17,6 +17,7 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { mapStyleUrl } from "@/lib/maptiler";
+import { MARKER_COLORS, type MarkerKind } from "./marker-colors";
 
 /**
  * MapLibre v6 builds its worker URL at runtime from a hardcoded filename:
@@ -34,9 +35,9 @@ export type MapMarker = {
   id: string;
   latitude: number;
   longitude: number;
-  kind: "start" | "destination" | "stop" | "member" | "draft";
+  kind: MarkerKind;
   label: string;
-  /** 1-based position along the route, shown inside destination pins. */
+  /** 1-based position among the stops, shown inside stop pins. */
   order?: number;
 };
 
@@ -50,18 +51,12 @@ const EMPTY_ROUTE: [number, number][] = [];
 const ROUTE_SOURCE = "trip-route";
 const ROUTE_COLOR = "#e5484d";
 
-const MARKER_COLORS: Record<MapMarker["kind"], string> = {
-  start: "#0f7b46",
-  destination: "#e5484d",
-  stop: "#1f6f5c",
-  member: "#3b6ef5",
-  draft: "#8a8a8a",
-};
-
 /**
  * Markers are plain DOM, so each kind gets its own shape rather than MapLibre's single
- * default pin: the start is a green flag, destinations are numbered teardrops (they carry
- * the route order), stops are small circles, members/drafts are dots.
+ * default pin. The three route roles have to be told apart at a glance, so they differ in
+ * shape *and* colour, not just colour: the source is a green pennant on a pole, the
+ * destination is a red teardrop carrying a chequered finish flag, and the stops between
+ * them are small teal circles numbered in visit order. Members and drafts are plain dots.
  */
 function buildMarkerElement(marker: MapMarker): HTMLElement {
   const el = document.createElement("div");
@@ -69,7 +64,7 @@ function buildMarkerElement(marker: MapMarker): HTMLElement {
   el.style.cursor = "pointer";
   el.title = marker.label;
 
-  if (marker.kind === "start") {
+  if (marker.kind === "source") {
     el.innerHTML = `
       <svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
         <circle cx="9" cy="30" r="4.5" fill="${color}" stroke="#fff" stroke-width="2"/>
@@ -81,20 +76,25 @@ function buildMarkerElement(marker: MapMarker): HTMLElement {
   }
 
   if (marker.kind === "destination") {
+    // A flag rather than a number: the destination is the one pin whose meaning
+    // shouldn't depend on reading a digit against a coloured background. A chequered
+    // flag was the first try and turned to mush at pin size — this stays legible.
     el.innerHTML = `
-      <svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
-        <path d="M15 39C15 39 28 24.4 28 14.5 28 6.5 22.2 1 15 1S2 6.5 2 14.5C2 24.4 15 39 15 39z"
+      <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 41C16 41 29 25.4 29 15.5 29 7 23.2 1 16 1S3 7 3 15.5C3 25.4 16 41 16 41z"
               fill="${color}" stroke="#fff" stroke-width="2"/>
-        <text x="15" y="19" text-anchor="middle" font-size="13" font-weight="700"
-              font-family="system-ui, sans-serif" fill="#fff">${marker.order ?? ""}</text>
+        <path d="M11 22V7" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M11.5 7.5h9l-2.5 4 2.5 4h-9z" fill="#fff"/>
       </svg>`;
     return el;
   }
 
   if (marker.kind === "stop") {
     el.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="10" cy="10" r="7" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+      <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="9.5" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+        <text x="12" y="16.5" text-anchor="middle" font-size="11" font-weight="700"
+              font-family="system-ui, sans-serif" fill="#fff">${marker.order ?? ""}</text>
       </svg>`;
     return el;
   }
@@ -275,7 +275,7 @@ export function MapCanvas({
     mapRef.current.flyTo({ center, zoom: 14, essential: true });
   }, [center]);
 
-  // Route line through the trip's places, in the order they were added.
+  // Route line through the trip's places, in computed visit order.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;

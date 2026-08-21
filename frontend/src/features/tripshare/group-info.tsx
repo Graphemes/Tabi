@@ -1,42 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import dynamic from "next/dynamic";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  Loader2,
-  MapPin,
-  Navigation,
-  Pencil,
-  Users,
-  X,
-} from "lucide-react";
+import { Check, Loader2, MapPin, Pencil, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/app/user-avatar";
-import { isMapConfigured } from "@/lib/maptiler";
 import { useAuthStore } from "@/store/auth-store";
-import {
-  getGroup,
-  listLiveLocations,
-  updateGroup,
-  type ApiGroup,
-} from "@/features/whatsapp/api";
-import type { MapMarker } from "./map/map-canvas";
-
-// Same reason as the Map tab: maplibre-gl touches `window` at import time.
-const MapCanvas = dynamic(() => import("./map/map-canvas").then((m) => m.MapCanvas), {
-  ssr: false,
-  loading: () => (
-    <div className="flex size-full items-center justify-center bg-brand-50 dark:bg-brand-100/30">
-      <Loader2 className="size-5 animate-spin text-muted-foreground" />
-    </div>
-  ),
-});
+import { getGroup, updateGroup, type ApiGroup } from "@/features/whatsapp/api";
+import { ItinerarySection } from "./map/itinerary-section";
+import { useTripItinerary } from "./map/use-trip-itinerary";
 
 export function GroupInfo({
   group: fallbackGroup,
@@ -63,32 +39,9 @@ export function GroupInfo({
 
   const group = groupQuery.data;
 
-  const locationsQuery = useQuery({
-    queryKey: ["groups", fallbackGroup.id, "live-locations"],
-    queryFn: () => listLiveLocations(fallbackGroup.id),
-  });
-
-  const liveLocations = useMemo(() => locationsQuery.data ?? [], [locationsQuery.data]);
-
-  const markers = useMemo<MapMarker[]>(
-    () =>
-      liveLocations.map((loc) => ({
-        id: `member:${loc.userId}`,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        kind: "member",
-        label: loc.user?.name || loc.user?.username || "Trip member",
-      })),
-    [liveLocations],
-  );
-
-  const mapCenter = useMemo<[number, number] | null>(
-    () =>
-      liveLocations.length > 0
-        ? [liveLocations[0].longitude, liveLocations[0].latitude]
-        : null,
-    [liveLocations],
-  );
+  // Shares its cache with the itinerary map below, so the member list's "sharing"
+  // markers and the pins on the map are always the same set of people.
+  const { liveLocations } = useTripItinerary(fallbackGroup.id);
 
   const isAdmin =
     group.members.find((member) => member.userId === authUserId)?.role === "ADMIN";
@@ -211,41 +164,7 @@ export function GroupInfo({
         )}
       </div>
 
-      <section className="border-t border-border px-4 py-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            Live locations
-          </h3>
-          <button
-            type="button"
-            onClick={() => onOpenMap(group.id)}
-            className="text-xs font-medium text-brand-700 transition hover:opacity-80"
-          >
-            View full map
-          </button>
-        </div>
-
-        <div className="h-44 overflow-hidden rounded-2xl border border-border">
-          {!isMapConfigured() ? (
-            <div className="flex size-full items-center justify-center px-6 text-center text-xs text-muted-foreground">
-              Set NEXT_PUBLIC_MAPTILER_KEY to enable the map.
-            </div>
-          ) : locationsQuery.isPending ? (
-            <div className="flex size-full items-center justify-center">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : markers.length === 0 ? (
-            <div className="flex size-full flex-col items-center justify-center gap-1.5 px-6 text-center">
-              <Navigation className="size-5 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">
-                No one is sharing their location yet.
-              </p>
-            </div>
-          ) : (
-            <MapCanvas markers={markers} center={mapCenter} />
-          )}
-        </div>
-      </section>
+      <ItinerarySection group={group} onOpenMap={onOpenMap} />
 
       <section className="border-t border-border px-2 pt-4 pb-6">
         <h3 className="mb-1 flex items-center gap-1.5 px-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">

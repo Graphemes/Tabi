@@ -5,8 +5,45 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-_Nothing pending — add new entries here as work lands, then move them under a
-dated release when merged to `main`._
+### Added
+- **Itinerary view in Trip info.** The trip's whole journey now lives in Group
+  details, not just the Map tab: the computed route drawn start → stops →
+  destinations, everyone's live position on the same map, and the sequence as a
+  tappable list. Selecting a point shows its address, note, coordinates, who
+  pinned it and its position in the itinerary.
+- **Directions hand off to the device's navigation app** rather than always
+  opening a Google Maps search page — Android gets a `geo:` link (so the system
+  chooser offers Maps/Waze/whatever is installed), iOS gets Apple Maps, other
+  platforms get Google Maps web directions (`lib/navigation-link.ts`).
+- Location-sharing switch is now reachable from Trip info too, alongside a
+  one-tap "Update" that pushes a fresh fix.
+- **Live locations are actually live.** While sharing is on, the app watches the
+  member's position and pushes moves over the socket (throttled to one emit per
+  15s, one watch per trip however many map views are mounted). Previously the
+  group saw wherever someone was when they last opened the map.
+
+### Changed
+- **A trip now has exactly one source and one destination**, with any number of
+  stops in between. The backend rejected a second source but happily took any
+  number of destinations, so the route had no defined end. Both ends are now
+  singletons (`places.service.ts`), the save form greys out whichever end is
+  already claimed, and the solver pins the destination last while optimising
+  only the stops between the two (`lib/route-order.ts`).
+- **The three route roles are now told apart by shape, not just colour**: the
+  source is a green pennant, the destination a red pin carrying a white flag,
+  and stops are small teal circles numbered in visit order. Previously
+  destinations and stops were both numbered pins in similar colours, which was
+  unreadable on the map. Lists mirror the pins, and the Itinerary section has a
+  legend.
+- Numbering counts stops only, so "stop 2 of 5" no longer includes the two
+  endpoints in its total.
+- Route order, pin numbering and list numbering come from a single
+  `useTripItinerary` hook, so the Map tab and Trip info can no longer disagree
+  about visit order. Stop pins are numbered like destination pins, and both
+  numbers are that place's position in the itinerary (previously destinations
+  were numbered among themselves and stops not at all).
+- Socket-driven refetches for places and live locations are filtered by trip;
+  an event for another group no longer invalidates the open one.
 
 ## 2026-08-10
 

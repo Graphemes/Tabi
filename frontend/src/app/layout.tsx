@@ -17,6 +17,15 @@ export const metadata: Metadata = {
   title: "Tabi — Trips, split fairly",
   description:
     "Plan trips with friends: shared group chat, expense splitting, and live location.",
+  other: {
+    // Tabi ships its own light/dark themes, so Dark Reader has nothing to add and a lot
+    // to break: it rewrites colours and injects `data-darkreader-*` attributes into the
+    // DOM before React hydrates, which both defeats the in-app theme toggle and shows up
+    // as a hydration mismatch. This meta tag asks the extension to leave the page alone;
+    // it only checks that the tag exists, so the value is arbitrary — but Next drops
+    // `other` entries whose content is an empty string, so it can't be "".
+    "darkreader-lock": "true",
+  },
 };
 
 export default function RootLayout({

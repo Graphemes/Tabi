@@ -3,7 +3,7 @@
 Snapshot of Tabi's build status. Update this alongside [CHANGELOG.md](CHANGELOG.md)
 whenever a feature moves between Done / In Progress / Backlog.
 
-_Last updated: 2026-08-10_
+_Last updated: 2026-08-21_
 
 ## Overview
 
@@ -24,7 +24,14 @@ Prisma/Postgres backend, Next.js 16 + React 19 frontend. See
   saved split rules. Plus a detail view with the per-person breakdown.
 - **Contacts** — debounced search for adding members.
 - **Profile** — editable profile, theme toggle, logout, delete account.
-- **Location** — per-trip location sharing (backend + frontend).
+- **Location** — per-trip location sharing (backend + frontend), opt-in per
+  member and toggleable from both the Map tab and Trip info.
+- **Map & itinerary** — MapLibre + MapTiler map with place search, dropped pins,
+  and saved places typed as start / stop / destination. Visit order is solved
+  client-side (nearest-neighbour + 2-opt, `lib/route-order.ts`) and drawn as a
+  route line with numbered pins. The same itinerary renders inside Trip info,
+  where any point can be opened for details or handed to the device's
+  navigation app for directions.
 - **Design system** — oklch token palette (light + dark), typographic scale,
   shared primitives. No hardcoded colours left in feature code.
 - **Responsive** — mobile bottom-tabs, tablet icon rail, desktop sidebar +
@@ -32,8 +39,6 @@ Prisma/Postgres backend, Next.js 16 + React 19 frontend. See
 
 ## Backlog / Known Gaps
 
-- **Map is a placeholder.** Location *sharing* works, but no map library is
-  installed, so there's no visual map yet. Currently labelled as such in-app.
 - **Profile & group photo upload.** The `/uploads` endpoint exists and
   `Group.photoUrl` is in the schema, but `User` has **no photo column** — a
   Prisma migration is needed before profile avatars can be wired up. Avatars are

@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ExternalLink,
   Flag,
   Loader2,
   Map as MapIcon,
@@ -19,20 +18,13 @@ import { ScreenHeader } from "@/components/app/screen-header";
 import { EmptyState } from "@/components/app/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { getSocket } from "@/lib/socket";
-import { googleMapsLink, isMapConfigured, type PlaceHit } from "@/lib/maptiler";
-import { pathLengthKm, shortestPath } from "@/lib/route-order";
-import { useAuthStore } from "@/store/auth-store";
-import {
-  deletePlace,
-  listGroupPlaces,
-  listLiveLocations,
-  setLocationSharing,
-  sharePlace,
-  type ApiGroup,
-} from "@/features/whatsapp/api";
+import { isMapConfigured, type PlaceHit } from "@/lib/maptiler";
+import { directionsLink, useNavPlatform } from "@/lib/navigation-link";
+import { deletePlace, sharePlace, type ApiGroup } from "@/features/whatsapp/api";
 import type { PlaceDraft } from "../navigation/nav-state";
 import { PlaceSearch } from "./place-search";
+import { useLocationSharing } from "./use-location-sharing";
+import { roleLabel, useTripItinerary } from "./use-trip-itinerary";
 import type { MapMarker } from "./map-canvas";
 
 // maplibre-gl reads `window` at import time, so it must never run during prerender.
@@ -57,121 +49,38 @@ export function MapDetail({
   onOpenChat: (groupId: number) => void;
 }) {
   const queryClient = useQueryClient();
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const authUserId = useAuthStore((s) => s.user?.id);
+  const navPlatform = useNavPlatform();
 
   const [draft, setDraft] = useState<PlaceDraft | null>(null);
   const [center, setCenter] = useState<[number, number] | null>(null);
   /** Where the map is actually looking, so search results are biased to the visible area. */
   const [viewCenter, setViewCenter] = useState<[number, number] | null>(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<number | null>(null);
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
 
   const groupId = group?.id ?? null;
-  // The groups query includes every GroupMember scalar, so the persisted sharing flag is
-  // already here — no extra request, and it survives a reload unlike local state would.
-  const sharingEnabled = Boolean(
-    group?.members.find((member) => member.userId === authUserId)?.locationSharingEnabled,
-  );
 
-  const placesQuery = useQuery({
-    queryKey: ["groups", groupId, "places"],
-    queryFn: () => listGroupPlaces(groupId!),
-    enabled: Boolean(groupId),
-  });
+  const { places, itinerary, route, markers: tripMarkers, totalKm, stopCount } =
+    useTripItinerary(groupId);
+  const sharing = useLocationSharing(group, { onPosition: setCenter });
 
-  const locationsQuery = useQuery({
-    queryKey: ["groups", groupId, "live-locations"],
-    queryFn: () => listLiveLocations(groupId!),
-    enabled: Boolean(groupId),
-  });
-
-  const places = useMemo(() => placesQuery.data ?? [], [placesQuery.data]);
-  const liveLocations = useMemo(() => locationsQuery.data ?? [], [locationsQuery.data]);
-
-  // Other members' saves and position updates land over the socket; refetch rather than
-  // patching the cache by hand so the payload shape stays owned by the API layer.
-  useEffect(() => {
-    if (!accessToken || !groupId) return;
-    const socket = getSocket(accessToken);
-
-    const invalidatePlaces = () =>
-      queryClient.invalidateQueries({ queryKey: ["groups", groupId, "places"] });
-    const invalidateLocations = () =>
-      queryClient.invalidateQueries({ queryKey: ["groups", groupId, "live-locations"] });
-
-    socket.on("place:new", invalidatePlaces);
-    socket.on("place:updated", invalidatePlaces);
-    socket.on("place:removed", invalidatePlaces);
-    socket.on("location:update", invalidateLocations);
-    if (!socket.connected) socket.connect();
-
-    return () => {
-      socket.off("place:new", invalidatePlaces);
-      socket.off("place:updated", invalidatePlaces);
-      socket.off("place:removed", invalidatePlaces);
-      socket.off("location:update", invalidateLocations);
-    };
-  }, [accessToken, groupId, queryClient]);
-
-  const startPlace = useMemo(
-    () => places.find((place) => place.kind === "START") ?? null,
-    [places],
-  );
-
-  // Visit order is computed, not the order things were added: shortest path across the
-  // start, every destination and every stop. See lib/route-order.ts.
-  const itinerary = useMemo(
+  // The unsaved pin is the only marker this screen owns; everything else comes from
+  // the trip itself, so both maps stay in step.
+  const markers = useMemo<MapMarker[]>(
     () =>
-      shortestPath(startPlace, places),
-    [places, startPlace],
+      draft
+        ? [
+            ...tripMarkers,
+            {
+              id: "draft",
+              latitude: draft.latitude,
+              longitude: draft.longitude,
+              kind: "draft",
+              label: draft.name || "New pin",
+            },
+          ]
+        : tripMarkers,
+    [tripMarkers, draft],
   );
-
-  const route = useMemo<[number, number][]>(
-    () => itinerary.map((place) => [place.longitude, place.latitude]),
-    [itinerary],
-  );
-
-  const routeKm = useMemo(() => pathLengthKm(itinerary), [itinerary]);
-
-  const markers = useMemo<MapMarker[]>(() => {
-    let stepCount = 0;
-    const saved = itinerary.map<MapMarker>((place) => {
-      const isStart = place.kind === "START";
-      const isStop = place.kind === "STOP";
-      if (!isStart && !isStop) stepCount += 1;
-      return {
-        id: `saved:${place.id}`,
-        latitude: place.latitude,
-        longitude: place.longitude,
-        kind: isStart ? "start" : isStop ? "stop" : "destination",
-        label: place.name,
-        order: !isStart && !isStop ? stepCount : undefined,
-      };
-    });
-
-    const members = liveLocations.map<MapMarker>((loc) => ({
-      id: `member:${loc.userId}`,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      kind: "member",
-      label: loc.user?.name || loc.user?.username || "Trip member",
-    }));
-
-    return draft
-      ? [
-          ...saved,
-          ...members,
-          {
-            id: "draft",
-            latitude: draft.latitude,
-            longitude: draft.longitude,
-            kind: "draft",
-            label: draft.name || "New pin",
-          },
-        ]
-      : [...saved, ...members];
-  }, [itinerary, liveLocations, draft]);
 
   const selectedPlace = places.find((place) => place.id === selectedPlaceId) ?? null;
 
@@ -205,39 +114,6 @@ export function MapDetail({
       setSelectedPlaceId(null);
     },
   });
-
-  const toggleSharing = useMutation({
-    mutationFn: (enabled: boolean) => setLocationSharing(groupId!, enabled),
-    onSuccess: (_data, enabled) => {
-      // Refetch groups so `locationSharingEnabled` — the source of truth for the switch —
-      // reflects the change instead of the switch snapping back.
-      queryClient.invalidateQueries({ queryKey: ["groups"] });
-      if (enabled) shareMyLocation();
-      else setShareStatus("Location sharing is off for this trip.");
-    },
-  });
-
-  const shareMyLocation = () => {
-    if (!groupId || !accessToken) return;
-    setShareStatus(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        getSocket(accessToken).emit("location:update", {
-          groupId,
-          payload: {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          },
-        });
-        setCenter([pos.coords.longitude, pos.coords.latitude]);
-        setShareStatus("Location shared with the trip.");
-        queryClient.invalidateQueries({ queryKey: ["groups", groupId, "live-locations"] });
-      },
-      (err) => setShareStatus(err.message || "Couldn't get your location."),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  };
 
   const pickSearchHit = (hit: PlaceHit) => {
     setSelectedPlaceId(null);
@@ -287,9 +163,9 @@ export function MapDetail({
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="hidden sm:inline">Share location</span>
             <Switch
-              checked={sharingEnabled}
-              onCheckedChange={(next) => toggleSharing.mutate(next)}
-              disabled={toggleSharing.isPending}
+              checked={sharing.sharingEnabled}
+              onCheckedChange={sharing.setSharing}
+              disabled={sharing.isToggling}
               aria-label="Share my location with this trip"
             />
           </label>
@@ -390,16 +266,17 @@ export function MapDetail({
                   Send to chat
                 </Button>
                 <a
-                  href={googleMapsLink(
+                  href={directionsLink(
                     selectedPlace.latitude,
                     selectedPlace.longitude,
                     selectedPlace.name,
+                    navPlatform,
                   )}
                   target="_blank"
                   rel="noreferrer"
                   className={buttonVariants({ variant: "outline", size: "sm" })}
                 >
-                  <ExternalLink />
+                  <Navigation />
                   Directions
                 </a>
                 {/* Saved places belong to the trip, not the person who pinned them, so
@@ -425,13 +302,14 @@ export function MapDetail({
             Route
             {itinerary.length > 1 && (
               <span className="ml-2 font-normal normal-case">
-                {itinerary.length} stops · {routeKm.toFixed(0)} km
+                {stopCount} {stopCount === 1 ? "stop" : "stops"} ·{" "}
+                {totalKm.toFixed(0)} km
               </span>
             )}
           </h2>
           <button
             type="button"
-            onClick={shareMyLocation}
+            onClick={sharing.shareMyLocation}
             className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-700 transition hover:opacity-80"
           >
             <Navigation className="size-3.5" />
@@ -439,9 +317,9 @@ export function MapDetail({
           </button>
         </div>
 
-        {shareStatus && (
+        {sharing.status && (
           <p className="px-4 pb-1 text-xs text-muted-foreground" role="status">
-            {shareStatus}
+            {sharing.status}
           </p>
         )}
 
@@ -464,36 +342,34 @@ export function MapDetail({
                   }}
                   className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-surface-hover"
                 >
-                  {place.kind === "START" ? (
+                  {/* Mirrors the pins: a flag at each end, a number for each stop. */}
+                  {place.role === "source" ? (
                     <span
-                      title="Starting point"
+                      title="Source"
                       className="flex size-8 shrink-0 items-center justify-center rounded-full bg-positive-soft text-positive"
                     >
                       <PlayCircle className="size-4" />
                     </span>
-                  ) : place.kind === "STOP" ? (
-                    <span
-                      title="Stop"
-                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700"
-                    >
-                      <MapPin className="size-4" />
-                    </span>
-                  ) : (
+                  ) : place.role === "destination" ? (
                     <span
                       title="Destination"
                       className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive"
                     >
                       <Flag className="size-4" />
                     </span>
+                  ) : (
+                    <span
+                      title="Stop"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700"
+                    >
+                      {place.stopNumber}
+                    </span>
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{place.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {place.kind === "START"
-                        ? "Starting point"
-                        : place.kind === "STOP"
-                          ? "Stop"
-                          : "Destination"}
+                      {roleLabel(place.role)}
+                      {place.role === "stop" && ` ${place.stopNumber} of ${stopCount}`}
                       {(place.note || place.address) && ` · ${place.note || place.address}`}
                     </span>
                   </span>

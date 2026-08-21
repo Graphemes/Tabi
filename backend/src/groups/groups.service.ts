@@ -31,10 +31,26 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
+            },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
       },
     });
   }
@@ -47,18 +63,43 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
+            },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
         // Newest message per group, so the trip list can show a real preview line
         // instead of a placeholder.
         messages: {
           take: 1,
           orderBy: { createdAt: 'desc' },
           include: {
-            sender: { select: { id: true, name: true, username: true, phone: true } },
-            expense: { select: { id: true, title: true, totalAmount: true, currency: true } },
+            sender: {
+              select: { id: true, name: true, username: true, phone: true },
+            },
+            expense: {
+              select: {
+                id: true,
+                title: true,
+                totalAmount: true,
+                currency: true,
+              },
+            },
           },
         },
       },
@@ -97,10 +138,26 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
+            },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
       },
     });
 
@@ -129,10 +186,26 @@ export class GroupsService {
       include: {
         members: {
           include: {
-            user: { select: { id: true, email: true, username: true, name: true, phone: true } },
+            user: {
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                name: true,
+                phone: true,
+              },
+            },
           },
         },
-        createdBy: { select: { id: true, email: true, username: true, name: true, phone: true } },
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
       },
     });
   }
@@ -156,7 +229,17 @@ export class GroupsService {
 
     return this.prisma.groupMember.create({
       data: { groupId, userId: dto.userId, status: 'PENDING' },
-      include: { user: { select: { id: true, email: true, username: true, name: true, phone: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            name: true,
+            phone: true,
+          },
+        },
+      },
     });
   }
 

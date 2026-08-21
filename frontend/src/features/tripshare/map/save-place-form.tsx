@@ -16,17 +16,18 @@ import {
 } from "@/features/whatsapp/api";
 import type { PlaceDraft } from "../navigation/nav-state";
 
+/** A trip runs source → stops → destination, so only the middle repeats. */
 const KIND_OPTIONS = [
   {
     value: "START" as const,
-    label: "Starting point",
+    label: "Source",
     hint: "Where the trip begins",
     icon: PlayCircle,
   },
   {
     value: "DESTINATION" as const,
     label: "Destination",
-    hint: "Somewhere you're going",
+    hint: "Where the trip ends",
     icon: Flag,
   },
   { value: "STOP" as const, label: "Stop", hint: "A waypoint on the way", icon: MapPin },
@@ -54,12 +55,23 @@ export function SavePlaceForm({
     [placesQuery.data],
   );
 
+  const existingDestination = useMemo(
+    () => (placesQuery.data ?? []).find((place) => place.kind === "DESTINATION") ?? null,
+    [placesQuery.data],
+  );
+
   const [name, setName] = useState(draft.name ?? "");
   const [note, setNote] = useState("");
-  // A trip needs its starting point before anything else, so that is what the first
-  // save defaults to. Once one exists the default moves on to Destination.
+  // The default walks the trip's own shape: the source first, then the destination, and
+  // everything after that is a stop in between.
   const [kind, setKind] = useState<PlaceKind | null>(null);
-  const effectiveKind: PlaceKind = kind ?? (existingStart ? "DESTINATION" : "START");
+  const effectiveKind: PlaceKind =
+    kind ?? (!existingStart ? "START" : !existingDestination ? "DESTINATION" : "STOP");
+
+  const takenBy = (value: PlaceKind) =>
+    value === "START" ? existingStart
+    : value === "DESTINATION" ? existingDestination
+    : null;
 
   const savePlace = useMutation({
     mutationFn: () =>
@@ -104,15 +116,17 @@ export function SavePlaceForm({
         </legend>
         {!existingStart && (
           <p className="mb-2 rounded-lg bg-brand-50 px-2.5 py-2 text-xs text-brand-800 dark:bg-brand-100/20 dark:text-brand-100">
-            This trip has no starting point yet. The route is measured from it, so save
-            this one as the start unless you have somewhere else in mind.
+            This trip has no source yet. The route is measured from it, so save this one
+            as the source unless you have somewhere else in mind.
           </p>
         )}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {KIND_OPTIONS.map((option) => {
             const active = effectiveKind === option.value;
-            // Exactly one start per trip — the backend rejects a second with a 409.
-            const taken = option.value === "START" && Boolean(existingStart);
+            // Exactly one source and one destination per trip — the backend rejects a
+            // second of either with a 409, so don't offer it.
+            const claimedBy = takenBy(option.value);
+            const taken = Boolean(claimedBy);
             return (
               <button
                 key={option.value}
@@ -121,7 +135,9 @@ export function SavePlaceForm({
                 disabled={taken}
                 aria-pressed={active}
                 title={
-                  taken ? `"${existingStart!.name}" is already the starting point` : undefined
+                  claimedBy
+                    ? `"${claimedBy.name}" is already the ${option.value === "START" ? "source" : "destination"} for this trip`
+                    : undefined
                 }
                 className={cn(
                   "flex items-start gap-2.5 rounded-xl border p-3 text-left transition",

@@ -1,10 +1,11 @@
 /**
- * Orders trip waypoints into the shortest round-less path, anchored at the starting
- * point. This is the travelling-salesman problem, which is NP-hard, so we use the
- * standard heuristic pair: nearest-neighbour for an initial tour, then 2-opt to remove
- * the crossings nearest-neighbour always leaves behind. For the handful of stops a trip
- * realistically has, this reaches the optimal tour or very near it, instantly and
- * offline — no routing API, no key, no per-request cost.
+ * Orders trip waypoints into the shortest path from the trip's source to its
+ * destination, visiting every stop in between. Both ends are fixed by the user, so only
+ * the middle is solved: that's the travelling-salesman path problem, which is NP-hard,
+ * so we use the standard heuristic pair — nearest-neighbour for an initial tour, then
+ * 2-opt to remove the crossings nearest-neighbour always leaves behind. For the handful
+ * of stops a trip realistically has, this reaches the optimal tour or very near it,
+ * instantly and offline — no routing API, no key, no per-request cost.
  *
  * Distances are great-circle (as the crow flies), not road distances. See
  * `map-detail.tsx` for how the result is drawn.
@@ -67,20 +68,22 @@ function nearestNeighbour<T extends RoutePoint>(start: T, rest: T[]): T[] {
 
 /**
  * 2-opt: reverse any segment whose removal shortens the path, until no improvement
- * remains. Index 0 is the fixed starting point and is never moved.
+ * remains. Index 0 is the source and is never moved; with `fixedEnd` the final point is
+ * the destination and is pinned too, so only the stops between them are reordered.
  */
-function twoOpt<T extends RoutePoint>(path: T[]): T[] {
+function twoOpt<T extends RoutePoint>(path: T[], fixedEnd: boolean): T[] {
   if (path.length < 4) return path;
 
   const best = [...path];
   // Bounded so a pathological input can't spin: trips are small, and each pass is O(n²).
   const MAX_PASSES = 50;
+  const lastMovable = fixedEnd ? best.length - 2 : best.length - 1;
 
   for (let pass = 0; pass < MAX_PASSES; pass += 1) {
     let improved = false;
 
-    for (let i = 1; i < best.length - 1; i += 1) {
-      for (let k = i + 1; k < best.length; k += 1) {
+    for (let i = 1; i < lastMovable; i += 1) {
+      for (let k = i + 1; k <= lastMovable; k += 1) {
         const before =
           haversineKm(best[i - 1], best[i]) +
           (k + 1 < best.length ? haversineKm(best[k], best[k + 1]) : 0);
@@ -103,16 +106,32 @@ function twoOpt<T extends RoutePoint>(path: T[]): T[] {
 }
 
 /**
- * Returns every point ordered for the shortest path, with `start` always first.
- * With no start point, the first element of `points` anchors the path instead, so the
- * route is still stable rather than arbitrary.
+ * Orders a trip: source first, destination last, stops arranged in between for the
+ * shortest total distance.
+ *
+ * Either end may be missing while the trip is still being planned. Without a source the
+ * first stop anchors the path, so the route is stable rather than arbitrary; without a
+ * destination the path simply ends wherever the last stop is.
  */
-export function shortestPath<T extends RoutePoint>(start: T | null, points: T[]): T[] {
-  const anchor = start ?? points[0] ?? null;
+export function orderRoute<T extends RoutePoint>({
+  source,
+  destination,
+  stops,
+}: {
+  source: T | null;
+  destination: T | null;
+  stops: T[];
+}): T[] {
+  const anchor = source ?? stops[0] ?? destination ?? null;
   if (!anchor) return [];
 
-  const rest = points.filter((point) => point.id !== anchor.id);
-  if (rest.length === 0) return [anchor];
+  const middle = stops.filter(
+    (stop) => stop.id !== anchor.id && stop.id !== destination?.id,
+  );
 
-  return twoOpt([anchor, ...nearestNeighbour(anchor, rest)]);
+  const ordered = [anchor, ...nearestNeighbour(anchor, middle)];
+  const fixedEnd = Boolean(destination) && destination!.id !== anchor.id;
+  if (fixedEnd) ordered.push(destination!);
+
+  return twoOpt(ordered, fixedEnd);
 }
