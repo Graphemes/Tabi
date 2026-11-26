@@ -3,7 +3,7 @@
 Snapshot of Tabi's build status. Update this alongside [CHANGELOG.md](CHANGELOG.md)
 whenever a feature moves between Done / In Progress / Backlog.
 
-_Last updated: 2026-08-21_
+_Last updated: 2026-10-20_
 
 ## Overview
 
@@ -24,14 +24,18 @@ Prisma/Postgres backend, Next.js 16 + React 19 frontend. See
   saved split rules. Plus a detail view with the per-person breakdown.
 - **Contacts** — debounced search for adding members.
 - **Profile** — editable profile, theme toggle, logout, delete account.
-- **Location** — per-trip location sharing (backend + frontend), opt-in per
-  member and toggleable from both the Map tab and Trip info.
+- **Location** — per-trip live location sharing, opt-in per member and
+  toggleable from both the Map tab and Trip info. While sharing is on, position
+  updates go to every shared trip for as long as the app is open (not just
+  while a map is visible). Other members see them live over the socket, with
+  polling as a fallback.
 - **Map & itinerary** — MapLibre + MapTiler map with place search, dropped pins,
-  and saved places typed as start / stop / destination. Visit order is solved
-  client-side (nearest-neighbour + 2-opt, `lib/route-order.ts`) and drawn as a
-  route line with numbered pins. The same itinerary renders inside Trip info,
-  where any point can be opened for details or handed to the device's
-  navigation app for directions.
+  and saved places typed as start / stop / destination. Visit order is
+  optimised on road driving time from OSRM, solved exactly for up to 12 stops
+  (`lib/route-order.ts`), and drawn along the actual roads with numbered pins.
+  If the routing server can't be reached, the app falls back to straight lines.
+  The same itinerary renders inside Trip info, where any point can be opened for
+  details or handed to the device's navigation app for directions.
 - **Design system** — oklch token palette (light + dark), typographic scale,
   shared primitives. No hardcoded colours left in feature code.
 - **Responsive** — mobile bottom-tabs, tablet icon rail, desktop sidebar +
@@ -52,8 +56,15 @@ Prisma/Postgres backend, Next.js 16 + React 19 frontend. See
   (`GET /balances`, `POST /settlements/:receiverId`), partial settlements,
   expense edit/delete UI (`PATCH`/`DELETE`), activity/history log
   (`GET /activity`), and equalize-on-new-member (`POST /equalize/:memberId`).
-- No automated test suite. Verification is currently a Playwright script driving
-  the real app.
+- **Routing uses the public OSRM demo server** by default. It is rate-limited
+  and has no uptime guarantee, so self-host OSRM (`NEXT_PUBLIC_ROUTING_URL`)
+  before real traffic.
+- **Live location stops when the browser backgrounds the tab.** Browsers pause
+  geolocation for background web pages; continuous background tracking needs
+  a native wrapper.
+- Automated tests are thin outside the browser suite: one backend unit test, no
+  frontend unit tests. Run the end-to-end suite with `cd e2e && npm test` (see
+  `e2e/README.md`).
 
 ## Maintenance notes
 

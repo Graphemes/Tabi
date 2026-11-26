@@ -5,7 +5,101 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Security
+- **Access tokens were signed with a public default key.** `JWT_SECRET` was
+  never set, so every module fell back to the hard-coded `'your-secret-key'`.
+  Anyone reading the source could mint a valid token for any user. Both JWT
+  secrets are now required, and the backend refuses to start without them
+  (`common/config/required-env.ts`).
+- **`backend/.env` was committed to this public repo**, including
+  `JWT_REFRESH_SECRET`. It is now untracked and ignored, the refresh secret has
+  been rotated, and `backend/.env.example` documents the variables. The old
+  value stays in git history, so treat it as compromised. Existing sessions
+  must log in again.
+- `.env` is now loaded explicitly before any module reads it (`load-env.ts`).
+  Until now it reached `process.env` only because Prisma's client happened to
+  be imported first.
+
+### Fixed
+- **A fresh database couldn't be built from the migrations.** Everything that
+  reached the dev database through `prisma db push` between `add_groups` and
+  `add_saved_places` (Message, Expense and its children, Settlement,
+  LiveLocation, ActivityLog, SavedSplitRule, OtpCode, Contact, and the
+  User/Group/GroupMember column changes) was never captured, so
+  `migrate deploy` failed on `relation "Message" does not exist`. A baseline
+  migration now fills the gap: a new database built from migrations alone
+  matches `schema.prisma` exactly. Existing databases need
+  `npx prisma migrate resolve --applied 20260601000000_baseline_db_push_tables`.
+- `npm run start:prod` failed with "Cannot find module dist/main". A stale,
+  unused `generated/prisma` client was being compiled, which moved the build
+  output to `dist/src/`. It is now excluded from the build.
+- Expense validation messages kept the previous currency after switching
+  currency (the memo didn't depend on it), and one still hardcoded `$0.00`.
+- Lint is clean in both apps: Express request typing uses module augmentation,
+  the login screen uses `useWatch` so the React Compiler can optimise it, and
+  the receipt preview follows the existing user-upload `<img>` convention.
+- **The backend crashed whenever someone closed one of two open tabs.** The
+  gateway runs on the `/realtime` namespace, so its injected `server` is a
+  `Namespace`, whose `sockets` is already the socket map. The presence check
+  looked up `server.sockets.sockets`, which is `undefined`, and the uncaught
+  `TypeError` in `handleDisconnect` took the whole process down. `server` is
+  now typed as `Namespace`, so the compiler models this correctly.
+- **Members could not see each other's live location.** Three faults stacked up:
+  - The socket checked its token only at connect, and access tokens last 15
+    minutes. A socket that connected with a stale token was dropped by the
+    server and never reconnected, so every position emitted after that sat in a
+    send buffer forever. The socket now presents the current token on every
+    attempt and refreshes it and reconnects on `auth:error` (`lib/socket.ts`).
+  - Positions were only sent while the Map tab or Trip info was on screen. They
+    now flow from one app-wide watcher to every trip the member shares with,
+    for as long as the app is open, with a 60s heartbeat so someone standing
+    still doesn't look disconnected (`use-location-broadcast.ts`). Sends are
+    throttled to one per 15s on the trailing edge: a move inside the window is
+    held and sent when the window closes, not dropped.
+  - Positions sent over HTTP were saved but never broadcast. The location
+    service now announces updates and sharing toggles itself and the gateway
+    relays them, whichever transport carried them. Positions are now sent over
+    HTTP, so a dropped socket can no longer lose them silently.
+- **Members got no realtime events for a trip they joined while online.**
+  Socket rooms were joined only on connect, so a member added to a trip, or
+  someone creating one, received none of its messages, place updates or live
+  locations until they reloaded, and the trip didn't appear in their list. A
+  removed member kept receiving them. `GroupsService` now publishes membership
+  changes; the gateway moves the member's open sockets in or out of the room
+  and sends `group:added` / `group:removed` so the trip list refreshes.
+- Live-location pins for members with no name or username all read "Trip
+  member". They now fall back to the phone number, matching the Trip info
+  member list.
+- **The route line stayed straight even after the road route loaded.** The map
+  only redrew the line when `isStyleLoaded()` was true. That is false while
+  tiles are still loading, which is when the road geometry arrives, so the
+  update was skipped for good. The same check meant the map often opened zoomed
+  out instead of framed on the trip. Both now use the map's one-time `load`
+  state (`map-canvas.tsx`).
+- Viewers also poll live locations every 30s as a fallback, and refetch when
+  another member turns sharing on or off, so that member appears or disappears
+  straight away.
+- A stationary phone reports `NaN` heading, which the API rejected. Non-finite
+  readings are now dropped before sending.
+- Opening the app over plain `http://` on a LAN IP (common when testing on a
+  phone) blocks geolocation without a clear error. The share controls now say
+  that HTTPS or localhost is needed.
+- **The route didn't follow the optimal path.** Visit order was optimised on
+  straight-line distance with a nearest-neighbour + 2-opt heuristic, and drawn
+  as straight segments over terrain. Order is now solved on **road driving
+  time** from OSRM, **exactly** (Held–Karp) for up to 12 stops, with local
+  search above that. The line follows the actual roads, and the totals show road
+  km and drive time. With no source set, the route now starts at whichever stop
+  is best rather than at the first stop in the list. If the routing server is
+  unreachable, it falls back to straight lines and says so
+  (`lib/route-order.ts`, `lib/road-routing.ts`; set `NEXT_PUBLIC_ROUTING_URL`
+  to self-host OSRM).
+
 ### Added
+- **Browser end-to-end suite** (`e2e/`, Playwright). Two users sign up through
+  OTP, build a trip, check the road-optimised route, share live location, and
+  exercise realtime delivery, the two-tab crash and stale-token recovery. It
+  runs against a `tabi_e2e` database rebuilt from migrations each run.
 - **Itinerary view in Trip info.** The trip's whole journey now lives in Group
   details, not just the Map tab: the computed route drawn start → stops →
   destinations, everyone's live position on the same map, and the sequence as a
@@ -39,9 +133,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   endpoints in its total.
 - Route order, pin numbering and list numbering come from a single
   `useTripItinerary` hook, so the Map tab and Trip info can no longer disagree
-  about visit order. Stop pins are numbered like destination pins, and both
-  numbers are that place's position in the itinerary (previously destinations
-  were numbered among themselves and stops not at all).
+  about visit order.
 - Socket-driven refetches for places and live locations are filtered by trip;
   an event for another group no longer invalidates the open one.
 

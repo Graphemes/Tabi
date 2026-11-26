@@ -14,6 +14,7 @@ import { ExpensesView } from "./expenses-view";
 import { ExpenseDetail } from "./expense-detail";
 import { MapView } from "./map-view";
 import { MapDetail } from "./map/map-detail";
+import { useLocationBroadcast } from "./map/use-location-broadcast";
 import { ChatView } from "./chat-view";
 import { OverlayHost } from "./overlays/overlay-host";
 
@@ -37,10 +38,17 @@ export function AppShell() {
         ),
       );
     };
+    // Added to (or removed from) a trip while online: the server has already moved this
+    // socket's rooms, so only the list itself needs refreshing.
+    const onMembershipChange = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
     socket.on("message:new", onMessage);
+    socket.on("group:added", onMembershipChange);
+    socket.on("group:removed", onMembershipChange);
     if (!socket.connected) socket.connect();
     return () => {
       socket.off("message:new", onMessage);
+      socket.off("group:added", onMembershipChange);
+      socket.off("group:removed", onMembershipChange);
     };
   }, [accessToken, queryClient]);
 
@@ -51,6 +59,7 @@ export function AppShell() {
   });
 
   const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
+  useLocationBroadcast(groups);
   const chatGroup = useMemo(
     () => groups.find((g) => g.id === nav.selection.groups) ?? null,
     [groups, nav.selection.groups],

@@ -5,12 +5,13 @@ import {
 } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { JwtService } from '@nestjs/jwt';
+import { AuthUser } from '../../common/interfaces/auth-user.interface';
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: any;
-    }
+// Module augmentation rather than `declare global { namespace Express }`: same effect
+// on `req.user`, in the ES module syntax the lint rules require.
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: AuthUser;
   }
 }
 

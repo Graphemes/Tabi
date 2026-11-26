@@ -3,21 +3,25 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupAccessService } from '../groups/group-access.service';
+import { GroupsService } from '../groups/groups.service';
 import { MessagesService } from '../messages/messages.service';
 import { LocationService } from '../location/location.service';
 import { CreateMessageDto } from '../messages/dto/create-message.dto';
 import { ToggleLocationSharingDto } from '../location/dto/toggle-location-sharing.dto';
 import { UpdateLiveLocationDto } from '../location/dto/update-live-location.dto';
 import { MessageType } from '@prisma/client';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Subscription } from 'rxjs';
+import { requiredEnv } from '../common/config/required-env';
 
 type SocketUser = {
   userId: number;
@@ -33,22 +37,84 @@ type SocketUser = {
   },
 })
 export class RealtimeGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
+  // With `namespace` set on the gateway, Nest injects that Namespace here, not the
+  // root Server — so `server.sockets` is already the id → Socket map.
   @WebSocketServer()
-  server: Server;
+  server: Namespace;
 
   private readonly logger = new Logger(RealtimeGateway.name);
   private readonly userSockets = new Map<number, Set<string>>();
   private readonly socketGroups = new Map<string, Set<number>>();
+  private readonly subscriptions: Subscription[] = [];
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
     private readonly groupAccessService: GroupAccessService,
+    private readonly groupsService: GroupsService,
     private readonly messagesService: MessagesService,
     private readonly locationService: LocationService,
   ) {}
+
+  /**
+   * Positions and sharing toggles reach the service over REST as well as this socket,
+   * so the broadcast hangs off the service's event stream rather than off the socket
+   * handlers — otherwise anything sent over HTTP would never reach the rest of the trip.
+   */
+  afterInit() {
+    const locationEvents = this.locationService.events.subscribe((event) => {
+      const room = this.getGroupRoom(event.groupId);
+      if (event.type === 'update') {
+        this.server.to(room).emit('location:update', {
+          groupId: event.groupId,
+          userId: event.userId,
+          username: event.location.user?.username,
+          location: event.location,
+        });
+      } else {
+        this.server.to(room).emit('location:sharing', {
+          groupId: event.groupId,
+          userId: event.userId,
+          enabled: event.enabled,
+        });
+      }
+    });
+
+    // Rooms are otherwise joined only on connect, so move the member's open sockets now.
+    const membershipEvents = this.groupsService.membershipEvents.subscribe(
+      (event) => {
+        const room = this.getGroupRoom(event.groupId);
+        for (const socketId of this.userSockets.get(event.userId) ?? []) {
+          const socket = this.server.sockets.get(socketId);
+          if (!socket) continue;
+          if (event.type === 'added') {
+            socket.join(room);
+            this.trackSocketGroup(socketId, event.groupId);
+          } else {
+            socket.leave(room);
+            this.untrackSocketGroup(socketId, event.groupId);
+          }
+          // Lets the client refresh its trip list without a reload.
+          socket.emit(
+            event.type === 'added' ? 'group:added' : 'group:removed',
+            { groupId: event.groupId },
+          );
+        }
+      },
+    );
+
+    this.subscriptions.push(locationEvents, membershipEvents);
+  }
+
+  onModuleDestroy() {
+    this.subscriptions.forEach((subscription) => subscription.unsubscribe());
+  }
 
   private getGroupRoom(groupId: number): string {
     return `group:${groupId}`;
@@ -112,7 +178,7 @@ export class RealtimeGateway
         continue;
       }
 
-      const sock = this.server.sockets.sockets.get(socketId);
+      const sock = this.server.sockets.get(socketId);
       if (sock && sock.rooms.has(roomName)) {
         return true;
       }
@@ -167,7 +233,7 @@ export class RealtimeGateway
       }
 
       const payload = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET || 'your-secret-key',
+        secret: requiredEnv('JWT_SECRET'),
       }) as { sub: number; email: string };
 
       const user = await this.prisma.user.findUnique({
@@ -420,18 +486,12 @@ export class RealtimeGateway
     const groupId = Number(body?.groupId);
 
     try {
-      const result = await this.locationService.setSharing(
+      // The service broadcasts `location:sharing` itself — see afterInit.
+      return await this.locationService.setSharing(
         groupId,
         user.userId,
         body.payload,
       );
-      this.server.to(this.getGroupRoom(groupId)).emit('location:sharing', {
-        groupId,
-        userId: user.userId,
-        enabled: result.locationSharingEnabled,
-      });
-
-      return result;
     } catch (error) {
       this.emitError(client, 'location:share-toggle', error);
       return null;
@@ -448,22 +508,12 @@ export class RealtimeGateway
     const groupId = Number(body?.groupId);
 
     try {
-      const result = await this.locationService.updateLiveLocation(
+      // The service broadcasts `location:update` itself — see afterInit.
+      return await this.locationService.updateLiveLocation(
         groupId,
         user.userId,
         body.payload,
       );
-
-      if (result.updated) {
-        this.server.to(this.getGroupRoom(groupId)).emit('location:update', {
-          groupId,
-          userId: user.userId,
-          username: user.username,
-          location: result.location,
-        });
-      }
-
-      return result;
     } catch (error) {
       this.emitError(client, 'location:update', error);
       return null;

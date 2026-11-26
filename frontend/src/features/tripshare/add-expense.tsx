@@ -129,7 +129,7 @@ export function AddExpense({ group, onBack }: Props) {
     }
     if (splitMode === "UNEQUAL") {
       return Math.abs(exactTotal - totalAmount) > 0.01
-        ? `Amounts must add up to ${formatMoney(totalAmount)}`
+        ? `Amounts must add up to ${formatCurrency(totalAmount, currency)}`
         : null;
     }
     if (splitMode === "PERCENTAGE") {
@@ -140,7 +140,7 @@ export function AddExpense({ group, onBack }: Props) {
     }
     if (splitMode === "ADJUSTMENT") {
       return Math.abs(adjustmentNet) > 0.01
-        ? `Adjustments must net to $0.00 (currently ${formatMoney(adjustmentNet)})`
+        ? `Adjustments must net to ${formatCurrency(0, currency)} (currently ${formatCurrency(adjustmentNet, currency)})`
         : null;
     }
     if (splitMode === "ITEMIZED") {
@@ -149,12 +149,12 @@ export function AddExpense({ group, onBack }: Props) {
         return "Each item needs a name, an amount, and at least one person";
       }
       if (Math.abs(itemsSum - totalAmount) > 0.01) {
-        return `Item totals must add up to ${formatMoney(totalAmount)}`;
+        return `Item totals must add up to ${formatCurrency(totalAmount, currency)}`;
       }
       return null;
     }
     return null;
-  }, [splitMode, includedMembers.length, exactTotal, percentTotal, shareTotal, adjustmentNet, items, itemsSum, totalAmount]);
+  }, [splitMode, includedMembers.length, exactTotal, percentTotal, shareTotal, adjustmentNet, items, itemsSum, totalAmount, currency]);
 
   const payerTotal = multiPayer
     ? Array.from(payerIds).reduce((sum, id) => sum + (parseFloat(payerValues[id]) || 0), 0)
@@ -800,6 +800,7 @@ export function AddExpense({ group, onBack }: Props) {
         <div className="rounded-xl border border-dashed border-border bg-surface-raised p-3">
           {receiptUrl ? (
             <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element -- user upload */}
               <img
                 src={`${env.apiBaseUrl}${receiptUrl}`}
                 alt="Receipt"

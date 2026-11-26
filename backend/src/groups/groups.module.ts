@@ -8,6 +8,6 @@ import { GroupAccessService } from './group-access.service';
   imports: [PrismaModule],
   controllers: [GroupsController],
   providers: [GroupsService, GroupAccessService],
-  exports: [GroupAccessService],
+  exports: [GroupsService, GroupAccessService],
 })
 export class GroupsModule {}

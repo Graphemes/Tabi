@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -37,6 +37,9 @@ export function LoginScreen() {
     resolver: zodResolver(loginSchema),
     defaultValues: { mobile: "" },
   });
+  // `useWatch` rather than `form.watch()`: the React Compiler can't memoise around
+  // `watch` and skips optimising the whole component.
+  const mobile = useWatch({ control: form.control, name: "mobile" });
 
   const requestOtpMutation = useMutation({
     mutationFn: (phone: string) => requestOtp(phone),
@@ -186,7 +189,7 @@ export function LoginScreen() {
                       placeholder="98765 43210"
                       inputMode="numeric"
                       className="tabular h-11 pl-13"
-                      value={form.watch("mobile")}
+                      value={mobile}
                       onChange={(e) => {
                         const val = e.target.value.replace(/\D/g, "").slice(0, 10);
                         form.setValue("mobile", val, { shouldValidate: true });

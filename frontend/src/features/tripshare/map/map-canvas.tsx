@@ -132,6 +132,8 @@ export function MapCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef(new Map<string, { marker: Marker; signature: string }>());
+  /** `load` has fired. Not `isStyleLoaded()`, which goes false again while tiles stream. */
+  const loadedRef = useRef(false);
 
   // `resolvedTheme` collapses "system" to the concrete light/dark actually rendering.
   const { resolvedTheme } = useTheme();
@@ -160,6 +162,9 @@ export function MapCanvas({
       zoom: 3,
     });
     mapRef.current = map;
+    map.once("load", () => {
+      loadedRef.current = true;
+    });
 
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
     map.addControl(
@@ -221,6 +226,7 @@ export function MapCanvas({
       markerEls.clear();
       map.remove();
       mapRef.current = null;
+      loadedRef.current = false;
     };
   }, []);
 
@@ -296,7 +302,12 @@ export function MapCanvas({
         return;
       }
 
-      map.addSource(ROUTE_SOURCE, { type: "geojson", data: geojson });
+      // Adding a source before the style itself has parsed throws; "styledata" retries.
+      try {
+        map.addSource(ROUTE_SOURCE, { type: "geojson", data: geojson });
+      } catch {
+        return;
+      }
       // Casing underneath keeps the line readable over both light and dark tiles.
       map.addLayer({
         id: `${ROUTE_SOURCE}-casing`,
@@ -314,9 +325,12 @@ export function MapCanvas({
       });
     };
 
-    // `setStyle` (theme swap) discards custom sources and layers, so redraw on every
-    // styledata event rather than only once.
-    if (map.isStyleLoaded()) draw();
+    // Not gated on `isStyleLoaded()`: that stays false while tiles are still streaming in,
+    // which is exactly when the road geometry replaces the provisional straight line —
+    // gating on it skipped that update, leaving straight segments on the map for good.
+    // `setStyle` (theme swap) discards custom sources and layers, so also redraw on
+    // every styledata event.
+    draw();
     map.on("styledata", draw);
     return () => {
       map.off("styledata", draw);
@@ -342,7 +356,7 @@ export function MapCanvas({
       map.fitBounds(bounds, { padding: 64, maxZoom: 15, animate: false });
     };
 
-    if (map.isStyleLoaded()) frame();
+    if (loadedRef.current) frame();
     else map.once("load", frame);
   }, [markers, center]);
 

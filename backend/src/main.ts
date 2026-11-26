@@ -1,3 +1,5 @@
+// Must stay first: other modules read .env values while they are being imported.
+import './load-env';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';

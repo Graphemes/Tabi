@@ -11,7 +11,12 @@ import { directionsLink, useNavPlatform } from "@/lib/navigation-link";
 import type { ApiGroup } from "@/features/whatsapp/api";
 import { MARKER_COLORS } from "./marker-colors";
 import { useLocationSharing } from "./use-location-sharing";
-import { roleLabel, useTripItinerary, type ItineraryStop } from "./use-trip-itinerary";
+import {
+  formatDuration,
+  roleLabel,
+  useTripItinerary,
+  type ItineraryStop,
+} from "./use-trip-itinerary";
 
 // Same reason as the Map tab: maplibre-gl touches `window` at import time.
 const MapCanvas = dynamic(() => import("./map-canvas").then((m) => m.MapCanvas), {
@@ -69,8 +74,17 @@ export function ItinerarySection({
   group: ApiGroup;
   onOpenMap: (groupId: number) => void;
 }) {
-  const { itinerary, route, markers, totalKm, liveLocations, stopCount, isPending } =
-    useTripItinerary(group.id);
+  const {
+    itinerary,
+    route,
+    routeKind,
+    markers,
+    totalKm,
+    totalMinutes,
+    liveLocations,
+    stopCount,
+    isPending,
+  } = useTripItinerary(group.id);
   const navPlatform = useNavPlatform();
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -181,7 +195,14 @@ export function ItinerarySection({
         {itinerary.length > 0 ? (
           <>
             {stopCount} {stopCount === 1 ? "stop" : "stops"} in between
-            {itinerary.length > 1 && <> · {totalKm.toFixed(0)} km end to end</>}
+            {itinerary.length > 1 && (
+              <>
+                {" · "}
+                {totalKm.toFixed(0)} km
+                {totalMinutes !== null && <>, {formatDuration(totalMinutes)}</>}
+                {routeKind === "road" ? " by road" : " in a straight line"}
+              </>
+            )}
           </>
         ) : (
           "No places saved yet."

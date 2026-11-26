@@ -3,12 +3,13 @@ import { JwtModule } from '@nestjs/jwt';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OtpController } from './otp.controller';
 import { OtpService } from './otp.service';
+import { requiredEnv } from '../common/config/required-env';
 
 @Module({
   imports: [
     PrismaModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
+      secret: requiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '24h' },
     }),
   ],

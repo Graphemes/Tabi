@@ -7,21 +7,48 @@ export const http = axios.create({
   timeout: 15_000,
 });
 
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-}> = [];
+let refreshing: Promise<string> | null = null;
 
-const processQueue = (error: unknown, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token!);
+/**
+ * Trades the refresh token for a new access token. Concurrent callers share one request:
+ * the refresh token rotates on use, so a second parallel refresh would present a token
+ * the server has already retired and log the user out. Also used by the socket, whose
+ * handshake token is only checked on connect and goes stale after 15 minutes.
+ */
+export const refreshAccessToken = (): Promise<string> => {
+  refreshing ??= (async () => {
+    try {
+      const refreshToken = window.localStorage.getItem("tabi.refreshToken");
+      if (!refreshToken) {
+        throw new Error("No refresh token");
+      }
+
+      const { data } = await axios.post(`${env.apiBaseUrl}/auth/refresh`, {
+        refresh_token: refreshToken,
+      });
+
+      window.localStorage.setItem("tabi.accessToken", data.access_token);
+      window.localStorage.setItem("tabi.refreshToken", data.refresh_token);
+
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        useAuthStore.getState().setAuth({
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          user: currentUser,
+        });
+      }
+
+      return data.access_token as string;
+    } catch (err) {
+      useAuthStore.getState().clearAuth();
+      throw err;
+    } finally {
+      refreshing = null;
     }
-  });
-  failedQueue = [];
+  })();
+
+  return refreshing;
 };
 
 http.interceptors.request.use((config) => {
@@ -41,51 +68,10 @@ http.interceptors.response.use(
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes("/auth/refresh")) {
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return http(originalRequest);
-        });
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        const refreshToken = window.localStorage.getItem("tabi.refreshToken");
-        if (!refreshToken) {
-          throw new Error("No refresh token");
-        }
-
-        const { data } = await axios.post(`${env.apiBaseUrl}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-
-        window.localStorage.setItem("tabi.accessToken", data.access_token);
-        window.localStorage.setItem("tabi.refreshToken", data.refresh_token);
-
-        const currentUser = useAuthStore.getState().user;
-        if (currentUser) {
-          useAuthStore.getState().setAuth({
-            accessToken: data.access_token,
-            refreshToken: data.refresh_token,
-            user: currentUser,
-          });
-        }
-
-        processQueue(null, data.access_token);
-
-        originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
-        return http(originalRequest);
-      } catch (err) {
-        processQueue(err, null);
-        useAuthStore.getState().clearAuth();
-        return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
-      }
+      const token = await refreshAccessToken();
+      originalRequest.headers.Authorization = `Bearer ${token}`;
+      return http(originalRequest);
     }
 
     return Promise.reject(error);

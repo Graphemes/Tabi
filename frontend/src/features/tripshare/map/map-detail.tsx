@@ -24,7 +24,7 @@ import { deletePlace, sharePlace, type ApiGroup } from "@/features/whatsapp/api"
 import type { PlaceDraft } from "../navigation/nav-state";
 import { PlaceSearch } from "./place-search";
 import { useLocationSharing } from "./use-location-sharing";
-import { roleLabel, useTripItinerary } from "./use-trip-itinerary";
+import { formatDuration, roleLabel, useTripItinerary } from "./use-trip-itinerary";
 import type { MapMarker } from "./map-canvas";
 
 // maplibre-gl reads `window` at import time, so it must never run during prerender.
@@ -59,8 +59,16 @@ export function MapDetail({
 
   const groupId = group?.id ?? null;
 
-  const { places, itinerary, route, markers: tripMarkers, totalKm, stopCount } =
-    useTripItinerary(groupId);
+  const {
+    places,
+    itinerary,
+    route,
+    routeKind,
+    markers: tripMarkers,
+    totalKm,
+    totalMinutes,
+    stopCount,
+  } = useTripItinerary(groupId);
   const sharing = useLocationSharing(group, { onPosition: setCenter });
 
   // The unsaved pin is the only marker this screen owns; everything else comes from
@@ -304,6 +312,8 @@ export function MapDetail({
               <span className="ml-2 font-normal normal-case">
                 {stopCount} {stopCount === 1 ? "stop" : "stops"} ·{" "}
                 {totalKm.toFixed(0)} km
+                {totalMinutes !== null && <> · {formatDuration(totalMinutes)}</>}
+                {routeKind === "road" ? " by road" : " in a straight line"}
               </span>
             )}
           </h2>

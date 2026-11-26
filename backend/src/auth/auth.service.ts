@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import * as bcrypt from 'bcrypt';
+import { requiredEnv } from '../common/config/required-env';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +22,7 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(
       { sub: userId, type: 'refresh' },
       {
-        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+        secret: requiredEnv('JWT_REFRESH_SECRET'),
         expiresIn: '24h',
       },
     );
@@ -154,7 +155,7 @@ export class AuthService {
   async refresh(refreshToken: string) {
     try {
       const payload = this.jwtService.verify(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+        secret: requiredEnv('JWT_REFRESH_SECRET'),
       });
 
       if (payload.type !== 'refresh') {

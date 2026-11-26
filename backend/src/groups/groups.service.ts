@@ -3,21 +3,36 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Subject } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { GroupAccessService } from './group-access.service';
 
+/**
+ * Someone joined or left a trip. The realtime gateway joins only at connect time, so
+ * without this a member added (or a trip created) while they're online would get none
+ * of that trip's live events until they reloaded — and a removed member would keep
+ * receiving them. The gateway moves their open sockets in or out of the room.
+ */
+export type MembershipEvent = {
+  type: 'added' | 'removed';
+  groupId: number;
+  userId: number;
+};
+
 @Injectable()
 export class GroupsService {
+  readonly membershipEvents = new Subject<MembershipEvent>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly groupAccessService: GroupAccessService,
   ) {}
 
   async create(dto: CreateGroupDto, userId: number) {
-    return this.prisma.group.create({
+    const group = await this.prisma.group.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -53,6 +68,9 @@ export class GroupsService {
         },
       },
     });
+
+    this.membershipEvents.next({ type: 'added', groupId: group.id, userId });
+    return group;
   }
 
   async findAll(userId: number) {
@@ -227,7 +245,7 @@ export class GroupsService {
       throw new ForbiddenException('User is already a member');
     }
 
-    return this.prisma.groupMember.create({
+    const member = await this.prisma.groupMember.create({
       data: { groupId, userId: dto.userId, status: 'PENDING' },
       include: {
         user: {
@@ -241,6 +259,9 @@ export class GroupsService {
         },
       },
     });
+
+    this.membershipEvents.next({ type: 'added', groupId, userId: dto.userId });
+    return member;
   }
 
   async removeMember(groupId: number, memberUserId: number, userId: number) {
@@ -264,9 +285,16 @@ export class GroupsService {
       throw new NotFoundException('User is not a member');
     }
 
-    return this.prisma.groupMember.delete({
+    const removed = await this.prisma.groupMember.delete({
       where: { id: membership.id },
     });
+
+    this.membershipEvents.next({
+      type: 'removed',
+      groupId,
+      userId: memberUserId,
+    });
+    return removed;
   }
 
   async remove(groupId: number, userId: number) {

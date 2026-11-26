@@ -20,4 +20,14 @@ export const env = {
    * Empty means the Map tab renders a "not configured" state instead of a broken canvas.
    */
   mapTilerKey: orFallback(process.env.NEXT_PUBLIC_MAPTILER_KEY, ""),
+  /**
+   * OSRM server for road distances and route geometry. The default is the public demo
+   * server: free and keyless, but rate-limited (~1 req/s) and with no uptime promise —
+   * point this at a self-hosted OSRM before real traffic. Unreachable means the route
+   * falls back to straight lines, so the trip still renders.
+   */
+  routingBaseUrl: orFallback(
+    process.env.NEXT_PUBLIC_ROUTING_URL,
+    "https://router.project-osrm.org",
+  ),
 };

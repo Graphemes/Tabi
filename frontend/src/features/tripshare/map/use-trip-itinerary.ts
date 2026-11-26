@@ -3,7 +3,8 @@
 import { useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket";
-import { orderRoute, pathLengthKm } from "@/lib/route-order";
+import { haversineKm, orderRoute, pathLengthKm } from "@/lib/route-order";
+import { fetchRoadMatrix, fetchRoadPath, MAX_ROAD_POINTS } from "@/lib/road-routing";
 import { useAuthStore } from "@/store/auth-store";
 import {
   listGroupPlaces,
@@ -34,6 +35,15 @@ export type ItineraryStop = ApiSavedPlace & {
   stopNumber: number | null;
 };
 
+/**
+ * Positions are pushed over the socket as they arrive; this poll only covers a socket
+ * that's mid-reconnect, so the map can never sit on a stale position for long.
+ */
+const LIVE_LOCATION_POLL_MS = 30_000;
+
+/** Average road speed for estimating a leg OSRM has no road for (islands, ferries). */
+const FALLBACK_KMH = 30;
+
 export function roleLabel(role: StopRole): string {
   if (role === "source") return "Source";
   if (role === "destination") return "Destination";
@@ -54,6 +64,7 @@ export function useTripItinerary(groupId: number | null) {
     queryKey: ["groups", groupId, "live-locations"],
     queryFn: () => listLiveLocations(groupId!),
     enabled: Boolean(groupId),
+    refetchInterval: LIVE_LOCATION_POLL_MS,
   });
 
   const places = useMemo(() => placesQuery.data ?? [], [placesQuery.data]);
@@ -83,6 +94,9 @@ export function useTripItinerary(groupId: number | null) {
     socket.on("place:updated", invalidatePlaces);
     socket.on("place:removed", invalidatePlaces);
     socket.on("location:update", invalidateLocations);
+    // Someone turning sharing off must vanish from everyone's map, and turning it on
+    // appear, without waiting for the next poll.
+    socket.on("location:sharing", invalidateLocations);
     if (!socket.connected) socket.connect();
 
     return () => {
@@ -90,6 +104,7 @@ export function useTripItinerary(groupId: number | null) {
       socket.off("place:updated", invalidatePlaces);
       socket.off("place:removed", invalidatePlaces);
       socket.off("location:update", invalidateLocations);
+      socket.off("location:sharing", invalidateLocations);
     };
   }, [accessToken, groupId, queryClient]);
 
@@ -109,10 +124,40 @@ export function useTripItinerary(groupId: number | null) {
     };
   }, [places]);
 
+  // Every point on the route, in a stable order, so the matrix query's key only changes
+  // when a place is added, removed or moved.
+  const routePoints = useMemo(
+    () =>
+      [source, destination, ...stops]
+        .filter((place): place is ApiSavedPlace => place !== null)
+        .sort((a, b) => a.id - b.id),
+    [source, destination, stops],
+  );
+
+  const canUseRoads = routePoints.length <= MAX_ROAD_POINTS;
+  const matrixQuery = useQuery({
+    queryKey: ["road-matrix", pointsKey(routePoints)],
+    queryFn: ({ signal }) => fetchRoadMatrix(routePoints, signal),
+    // With two points there is nothing to order, so no matrix is needed.
+    enabled: routePoints.length >= 3 && canUseRoads,
+    staleTime: Infinity,
+    retry: 1,
+  });
+
   // Visit order is computed, not the order things were added: source first, destination
-  // last, stops arranged in between for the shortest path. See lib/route-order.ts.
+  // last, stops arranged in between for the shortest *driving time*. Until the road
+  // matrix arrives (or if the routing server is down) great-circle distance stands in.
+  // See lib/route-order.ts.
   const itinerary = useMemo<ItineraryStop[]>(() => {
-    const ordered = orderRoute({ source, destination, stops });
+    const matrix = matrixQuery.data;
+    const indexOf = new Map(routePoints.map((place, index) => [place.id, index]));
+    const cost = matrix
+      ? (a: ApiSavedPlace, b: ApiSavedPlace) =>
+          matrix.durations[indexOf.get(a.id)!]?.[indexOf.get(b.id)!] ??
+          (haversineKm(a, b) / FALLBACK_KMH) * 3600
+      : haversineKm;
+
+    const ordered = orderRoute({ source, destination, stops }, cost);
     const roleOf = (id: number): StopRole =>
       id === source?.id ? "source" : id === destination?.id ? "destination" : "stop";
 
@@ -130,7 +175,7 @@ export function useTripItinerary(groupId: number | null) {
         stopNumber: role === "stop" ? stopIds.indexOf(place.id) + 1 : null,
       };
     });
-  }, [source, destination, stops]);
+  }, [source, destination, stops, routePoints, matrixQuery.data]);
 
   /** How many stops sit between the two ends — the denominator in "stop 2 of 5". */
   const stopCount = useMemo(
@@ -138,12 +183,30 @@ export function useTripItinerary(groupId: number | null) {
     [itinerary],
   );
 
-  const route = useMemo<[number, number][]>(
+  // The line on the map follows the roads. Fetched only once the order has settled on
+  // road times, so the provisional straight-line order never costs a request.
+  const pathQuery = useQuery({
+    queryKey: ["road-path", pointsKey(itinerary)],
+    queryFn: ({ signal }) => fetchRoadPath(itinerary, signal),
+    enabled: itinerary.length >= 2 && canUseRoads && !matrixQuery.isFetching,
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const roadPath = pathQuery.data ?? null;
+
+  const straightLine = useMemo<[number, number][]>(
     () => itinerary.map((place) => [place.longitude, place.latitude]),
     [itinerary],
   );
+  const route = roadPath?.coordinates ?? straightLine;
 
-  const totalKm = useMemo(() => pathLengthKm(itinerary), [itinerary]);
+  /** "road" once the drawn line and totals come from the road network. */
+  const routeKind: "road" | "straight" = roadPath ? "road" : "straight";
+  const totalKm = useMemo(
+    () => (roadPath ? roadPath.distanceMetres / 1000 : pathLengthKm(itinerary)),
+    [roadPath, itinerary],
+  );
+  const totalMinutes = roadPath ? roadPath.durationSeconds / 60 : null;
 
   const placeMarkers = useMemo<MapMarker[]>(
     () =>
@@ -166,7 +229,9 @@ export function useTripItinerary(groupId: number | null) {
         latitude: loc.latitude,
         longitude: loc.longitude,
         kind: "member",
-        label: loc.user?.name || loc.user?.username || "Trip member",
+        // Same fallback as the Trip info member list, so a member who hasn't set a name
+        // yet is still told apart by phone instead of every pin reading "Trip member".
+        label: `${loc.user?.name || loc.user?.username || loc.user?.phone || "Trip member"} · ${timeAgo(loc.sharedAt)}`,
       })),
     [liveLocations],
   );
@@ -183,9 +248,37 @@ export function useTripItinerary(groupId: number | null) {
     destination,
     stopCount,
     route,
+    routeKind,
     markers,
     totalKm,
+    totalMinutes,
     liveLocations,
     isPending: placesQuery.isPending || locationsQuery.isPending,
   };
+}
+
+/** Identity *and* position, so moving a pin refetches but a refetch alone doesn't. */
+function pointsKey(points: ApiSavedPlace[]): string {
+  return points
+    .map((p) => `${p.id}:${p.latitude.toFixed(6)},${p.longitude.toFixed(6)}`)
+    .join("|");
+}
+
+/** "just now", "4 min ago", "2 h ago" — how fresh a member's position is. */
+function timeAgo(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+/** "45 min", "3 h 20 min" — driving time for the whole route. */
+export function formatDuration(minutes: number): string {
+  const rounded = Math.max(1, Math.round(minutes));
+  if (rounded < 60) return `${rounded} min`;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }

@@ -1,0 +1,13 @@
+{
+  "name": "tabi-e2e",
+  "private": true,
+  "description": "Browser end-to-end tests driving the real backend and frontend together.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

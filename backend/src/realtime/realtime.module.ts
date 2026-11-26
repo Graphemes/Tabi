@@ -5,11 +5,12 @@ import { GroupsModule } from '../groups/groups.module';
 import { MessagesModule } from '../messages/messages.module';
 import { LocationModule } from '../location/location.module';
 import { RealtimeGateway } from './realtime.gateway';
+import { requiredEnv } from '../common/config/required-env';
 
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
+      secret: requiredEnv('JWT_SECRET'),
     }),
     PrismaModule,
     GroupsModule,

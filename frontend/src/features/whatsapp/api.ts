@@ -247,6 +247,27 @@ export const listLiveLocations = async (groupId: number) => {
   return data;
 };
 
+export type LivePosition = {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+};
+
+/**
+ * Over HTTP rather than the socket: a socket emit made while the connection is down just
+ * waits in a buffer, whereas this either lands (refreshing the token if it must) or
+ * fails visibly. The server broadcasts the new position to the trip either way.
+ */
+export const postLiveLocation = async (groupId: number, position: LivePosition) => {
+  const { data } = await http.post<{ updated: boolean; reason?: string }>(
+    `/groups/${groupId}/location/live`,
+    position,
+  );
+  return data;
+};
+
 export const setLocationSharing = async (groupId: number, enabled: boolean) => {
   const { data } = await http.patch(`/groups/${groupId}/location/sharing`, { enabled });
   return data;

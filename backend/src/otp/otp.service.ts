@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { requiredEnv } from '../common/config/required-env';
 
 @Injectable()
 export class OtpService {
@@ -18,7 +19,7 @@ export class OtpService {
     const refreshToken = this.jwtService.sign(
       { sub: userId, type: 'refresh' },
       {
-        secret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-key',
+        secret: requiredEnv('JWT_REFRESH_SECRET'),
         expiresIn: '24h',
       },
     );

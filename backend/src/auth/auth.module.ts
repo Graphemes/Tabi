@@ -11,13 +11,14 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthMiddleware } from './middleware/auth.middleware';
+import { requiredEnv } from '../common/config/required-env';
 
 @Module({
   imports: [
     PrismaModule,
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'your-secret-key',
+      secret: requiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '24h' },
     }),
   ],
